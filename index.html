@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Family Menu V2.1 (Full CRUD Cloud)</title>
+    <title>Family Menu V2.2 (Cooking History Log)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.development.js"></script>
@@ -58,7 +58,7 @@
         const { useEffect, useMemo, useState } = React;
 
         // =========================================================
-        // 🔴 关键配置区：请在这里填入你的 Supabase URL 和 Key 🔴
+        // 🔴 CRITICAL CONFIGURATION AREA: FILL IN YOUR CREDS 🔴
         // =========================================================
         const SUPABASE_URL = 'https://fawxcdheypnfnlxzcwrl.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_0ymWg7r2cAB-A0fQ7Hm4lQ_tV0Mcx1_';
@@ -105,9 +105,11 @@
           const [customDishes, setCustomDishes] = useState([]);
           const [inventory, setInventory] = useState([]);
           const [calorieLookup, setCalorieLookup] = useState({});
+          const [cookingHistory, setCookingHistory] = useState([]); // 🚀 Cooking History Cloud State
           
           const [orders, setOrders] = useState([]);
           const [selectedDish, setSelectedDish] = useState(null);
+          const [loggingDish, setLoggingDish] = useState(null); // 🚀 Active dish being logged
           const [isFormOpen, setIsFormOpen] = useState(false);
           const [form, setForm] = useState(emptyForm);
           const [formError, setFormError] = useState("");
@@ -147,6 +149,11 @@
 
                 const { data: inv } = await supabase.from('pantry_inventory').select('*');
                 if (inv) setInventory(inv.map(i => ({ name: i.name, qty: Number(i.qty), unit: i.unit, role: 'pantry' })));
+
+                // 🚀 Fetch cooking history records from cloud
+                const { data: hist } = await supabase.from('cooking_history').select('*');
+                if (hist) setCookingHistory(hist.map(h => ({ id: h.id, recipe_id: Number(h.recipe_id), rating: Number(h.rating), notes: h.notes, cooking_date: h.cooking_date })));
+
               } catch (e) {
                 console.error(e);
               } finally {
@@ -159,7 +166,7 @@
           async function handleLogin(e) {
             e.preventDefault(); setAuthError("");
             const { error } = await supabase.auth.signInWithPassword({ email: FAMILY_EMAIL, password });
-            if (error) setAuthError("暗号错误，密码不匹配噢 🐾");
+            if (error) setAuthError("Incorrect code. Password does not match 🐾");
           }
 
           const estimateCalories = (ingredients) => {
@@ -172,10 +179,33 @@
             }, 0);
           };
 
+          // 🚀 Hardcore Trimmed-Mean Scoring Logic
+          const getRecipeStats = (recipeId) => {
+            const matchLogs = cookingHistory.filter(h => Number(h.recipe_id) === Number(recipeId));
+            const totalLogs = matchLogs.length;
+            if (totalLogs === 0) return { avg: null, count: 0 };
+            
+            const scores = matchLogs.map(h => h.rating);
+            if (totalLogs === 1) return { avg: roundQty(scores[0]), count: 1 };
+            if (totalLogs === 2) return { avg: roundQty((scores[0] + scores[1]) / 2), count: 2 };
+            
+            // 3 or more: drop one min and one max
+            const sorted = [...scores].sort((a, b) => a - b);
+            sorted.pop();   // drop max
+            sorted.shift(); // drop min
+            const sum = sorted.reduce((a, b) => a + b, 0);
+            return { avg: roundQty(sum / sorted.length), count: totalLogs };
+          };
+
           const dishes = useMemo(() => baseDishes.concat(customDishes).map(d => {
             const all = (d.mainIngredients || []).concat(d.pantryIngredients || []);
-            return Object.assign({}, d, { calories: Math.max(40, Math.round(estimateCalories(all) / 5) * 5) });
-          }), [customDishes, calorieLookup]);
+            const stats = getRecipeStats(d.id);
+            return Object.assign({}, d, { 
+              calories: Math.max(40, Math.round(estimateCalories(all) / 5) * 5),
+              avgRating: stats.avg,
+              logCount: stats.count
+            });
+          }), [customDishes, calorieLookup, cookingHistory]);
 
           const visibleDishes = useMemo(() => dishes.filter(d => (d.name || "").toLowerCase().includes(searchQuery.toLowerCase())), [dishes, searchQuery]);
           const orderItems = useMemo(() => orders.map(e => { const d = dishes.find(i => i.id === e.id); return d ? Object.assign({}, d, { count: e.count }) : null; }).filter(Boolean), [orders, dishes]);
@@ -216,17 +246,16 @@
           function updateDish(id, delta) { setOrders(curr => curr.map(item => item.id === id ? Object.assign({}, item, { count: Math.max(0, item.count + delta) }) : item).filter(item => item.count > 0)); }
           function addDish(id) { setOrders(curr => { const e = curr.find(i => i.id === id); return e ? curr.map(i => i.id === id ? Object.assign({}, i, { count: i.count + 1 }) : i) : curr.concat({ id, count: 1 }); }); }
 
-          // 🚀 全新关系型写入：添加菜谱
           async function submitDish(event) {
             event.preventDefault();
             const name = form.name.trim(); const parsedMain = parseIngredients(form.mainIngredients, "main"); const parsedPantry = parseIngredients(form.pantryIngredients, "pantry");
             const tags = parseTags(form.tags); const preparation = form.preparation.split("\n").map(l => l.trim()).filter(Boolean); const cooking = form.cooking.split("\n").map(l => l.trim()).filter(Boolean);
-            if (!name || parsedMain.length === 0) { setFormError("请至少输入菜名和一个主料噢！"); return; }
+            if (!name || parsedMain.length === 0) { setFormError("Please enter at least a recipe name and one main ingredient!"); return; }
 
             const { data: newRec, error: rErr } = await supabase.from('recipes').insert([{
               name, subtitle: generateSubtitle(name, parsedMain), time_estimate: "15 min", tags, accent: ["#d78a55", "#8fbc8f", "#f0c36a"], preparation, cooking, is_custom: true
             }]).select().single();
-            if (rErr || !newRec) { setFormError("存储主表失败啦！"); return; }
+            if (rErr || !newRec) { setFormError("Failed to store core recipe table."); return; }
 
             const ingredientRows = parsedMain.concat(parsedPantry).map(i => ({ recipe_id: newRec.id, name: i.name, qty: i.qty, unit: i.unit, role: i.role }));
             await supabase.from('recipe_ingredients').insert(ingredientRows);
@@ -235,21 +264,17 @@
             setForm(emptyForm); setIsFormOpen(false); setFormError("");
           }
 
-          // 🚀 核心新增功能一：云端关系型原子化「修改」引擎
           async function cloudUpdateDish(id, updatedFields, allParsedIngredients) {
             try {
-              // 1. 更新 recipes 主表信息
               const { error: rErr } = await supabase.from('recipes').update({
                 name: updatedFields.name, subtitle: updatedFields.subtitle, tags: updatedFields.tags, preparation: updatedFields.preparation, cooking: updatedFields.cooking
               }).eq('id', id);
               if (rErr) return false;
 
-              // 2. 清空该菜谱旧的关联食材，重新灌入新修改的食材行
               await supabase.from('recipe_ingredients').delete().eq('recipe_id', id);
               const newRows = allParsedIngredients.map(i => ({ recipe_id: id, name: i.name, qty: i.qty, unit: i.unit, role: i.role }));
               await supabase.from('recipe_ingredients').insert(newRows);
 
-              // 3. 同步本地 React State
               const updatedDishObj = Object.assign({}, updatedFields, {
                 id, custom: true, accent: ["#d78a55", "#8fbc8f", "#f0c36a"], time: "15 min",
                 mainIngredients: allParsedIngredients.filter(i => i.role === 'main'),
@@ -259,29 +284,46 @@
               setSelectedDish(updatedDishObj);
               return true;
             } catch (e) {
-              console.error(e); return false;
+              return false;
             }
           }
 
-          // 🚀 核心新增功能二：云端关系型「级联删除」引擎
           async function cloudDeleteDish(id) {
             try {
-              // 级联删：删掉 recipes 行，recipe_ingredients 对应行由 Postgres 外键自动瞬间抹除！
               const { error } = await supabase.from('recipes').delete().eq('id', id);
               if (error) return;
               setCustomDishes(curr => curr.filter(d => d.id !== id));
-              setOrders(curr => curr.filter(o => o.id !== id)); // 清理已点的划痕
+              setOrders(curr => curr.filter(o => o.id !== id));
               setSelectedDish(null);
             } catch (e) {
               console.error(e);
             }
           }
 
+          // 🚀 云端关系型写入：保存新的历史烹饪日志记录
+          async function cloudAddCookingLog(recipeId, rating, notes, cookingDate) {
+            if (window.confirm("Are you sure you want to log this cooking history? ✨")) {
+              const { data, error } = await supabase.from('cooking_history').insert([{
+                recipe_id: recipeId, rating: Number(rating), notes, cooking_date: cookingDate
+              }]).select().single();
+              
+              if (!error && data) {
+                setCookingHistory(curr => curr.concat({ id: data.id, recipe_id: Number(data.recipe_id), rating: Number(data.rating), notes: data.notes, cooking_date: data.cooking_date }));
+                setLoggingDish(null);
+                return true;
+              }
+            }
+            return false;
+          }
+
           async function addInventory(event) {
             event.preventDefault(); const qty = Number(inventoryForm.qty); const cName = canonicalName(inventoryForm.name); const normUnit = normalizeUnit(inventoryForm.unit);
             if (!cName || !Number.isFinite(qty) || qty <= 0) return;
-            await supabase.from('pantry_inventory').upsert({ name: cName, qty, unit: normUnit }, { onConflict: 'name' });
-            setInventory(curr => curr.filter(i => i.name.toLowerCase() !== cName.toLowerCase()).concat({ name: cName, qty, unit: normUnit, role: 'pantry' }));
+            await supabase.from('pantry_inventory').insert([{ name: cName, qty, unit: normUnit }]).select().single()
+              .catch(async () => await supabase.from('pantry_inventory').update({ qty, unit: normUnit }).eq('name', cName));
+            
+            const { data: refreshed } = await supabase.from('pantry_inventory').select('*');
+            if (refreshed) setInventory(refreshed.map(i => ({ name: i.name, qty: Number(i.qty), unit: i.unit, role: 'pantry' })));
             setInventoryForm(emptyInventoryForm);
           }
 
@@ -294,16 +336,16 @@
             return h("div", { className: "fixed inset-0 z-50 grid place-items-center bg-cream/95 px-4 backdrop-blur-md" },
               h("form", { onSubmit: handleLogin, className: "w-full max-w-md rounded-2xl border border-cedar/10 bg-white p-8 shadow-soft text-center" },
                 h("p", { className: "text-sm font-medium uppercase tracking-wider text-clay mb-2" }, "🔐 Private Domain"),
-                h("h2", { className: "text-3xl font-semibold text-ink tracking-tight mb-4" }, "potacat 私房菜馆"),
-                h("p", { className: "text-sm text-cedar/70 mb-6 leading-relaxed" }, "这是一个属于我们两人的私密美食城堡，\n请输入家庭暗号信物进入。"),
-                h("input", { type: "password", value: password, placeholder: "输入专属纪念日密码...", onChange: (e) => setPassword(e.target.value), className: "w-full text-center rounded-xl border border-cedar/15 bg-cream px-4 py-3 text-base outline-none tracking-widest focus:border-clay focus:ring-4 focus:ring-clay/15 mb-4" }),
+                h("h2", { className: "text-3xl font-semibold text-ink tracking-tight mb-4" }, "potacat's Bistro"),
+                h("p", { className: "text-sm text-cedar/70 mb-6 leading-relaxed" }, "This is a private culinary castle for the two of us.\nPlease enter the family pass code."),
+                h("input", { type: "password", value: password, placeholder: "Enter anniversary password...", onChange: (e) => setPassword(e.target.value), className: "w-full text-center rounded-xl border border-cedar/15 bg-cream px-4 py-3 text-base outline-none tracking-widest focus:border-clay focus:ring-4 focus:ring-clay/15 mb-4" }),
                 authError && h("p", { className: "text-sm text-red-600 mb-4 font-medium" }, authError),
-                h("button", { type: "submit", className: "w-full rounded-xl bg-ink px-4 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-cedar" }, "拉开大门 🚪")
+                h("button", { type: "submit", className: "w-full rounded-xl bg-ink px-4 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-cedar" }, "Open the Gate 🚪")
               )
             );
           }
 
-          if (isDataLoading) return h("div", { className: "grid min-h-screen place-items-center text-xl font-semibold text-clay animate-pulse" }, "正在同步云端大平层中...");
+          if (isDataLoading) return h("div", { className: "grid min-h-screen place-items-center text-xl font-semibold text-clay animate-pulse" }, "Synchronizing with cloud fortress...");
 
           return h("main", { className: "mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-8 px-5 py-6 sm:px-8 lg:px-10" },
             h("header", { className: "flex flex-col gap-5 border-b border-cedar/10 pb-6 lg:flex-row lg:items-end lg:justify-between" },
@@ -321,136 +363,177 @@
             h("section", { className: "grid flex-1 gap-6 lg:grid-cols-[1.2fr_.9fr]" },
               h("div", { className: "space-y-4" },
                 h("div", { className: "flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" },
-                  h("div", null, h("h2", { className: "text-xl font-semibold" }, "Dinner Menu"), h("p", { className: "mt-1 text-sm text-cedar/65" }, "Click dish name to edit or delete recipes.")),
+                  h("div", null, h("h2", { className: "text-xl font-semibold" }, "Dinner Menu"), h("p", { className: "mt-1 text-sm text-cedar/65" }, "Click recipe name to customize or record cooking logs.")),
                   h("input", { value: searchQuery, placeholder: "Search recipes...", onChange: (e) => setSearchQuery(e.target.value), className: "w-full rounded-lg border border-white/70 bg-white/80 px-3 py-3 text-sm outline-none sm:max-w-xs focus:border-clay" })
                 ),
                 h("div", { className: "grid gap-4 sm:grid-cols-2" },
-                  visibleDishes.map(dish => h(DishCard, { key: dish.id, dish, onAdd: () => addDish(dish.id), onOpen: () => setSelectedDish(dish) }))
+                  visibleDishes.map(dish => h(DishCard, { key: dish.id, dish, onAdd: () => addDish(dish.id), onOpen: () => setSelectedDish(dish), onLogClick: () => setLoggingDish(dish) }))
                 )
               ),
               h(Sidebar, { orderItems, requiredList, groceryList, coveredList, inventory, inventoryForm, setInventoryForm, onAddInventory: addInventory, onRemoveInventory: (name) => removeInventoryItem(name), onClear: () => setOrders([]), onUpdate: updateDish, onRemove: (id) => setOrders(curr => curr.filter(i => i.id !== id)) })
             ),
-            selectedDish && h(RecipeModal, { dish: selectedDish, onClose: () => setSelectedDish(null), onDelete: cloudDeleteDish, onUpdate: cloudUpdateDish }),
+            selectedDish && h(RecipeModal, { dish: selectedDish, historyLogs: cookingHistory.filter(l => l.recipe_id === selectedDish.id), onClose: () => setSelectedDish(null), onDelete: cloudDeleteDish, onUpdate: cloudUpdateDish, onLogClick: () => { setLoggingDish(selectedDish); setSelectedDish(null); } }),
+            loggingDish && h(LogCookingModal, { dish: loggingDish, onClose: () => setLoggingDish(null), onSaveLog: cloudAddCookingLog }),
             isFormOpen && h(AddDishModal, { form, formError, setForm, onClose: () => { setIsFormOpen(false); setFormError(""); }, onSubmit: submitDish })
           );
         }
 
         // ==========================================
-        // 🧱 UI 核心升级：包含双重确认、编辑态的 RecipeModal
+        // 🧱 DishCard Component (Added Star Rating UI & Log Button)
         // ==========================================
-        function RecipeModal({ dish, onClose, onDelete, onUpdate }) {
-          const [isEditing, setIsEditing] = useState(false);
-          const [editName, setEditName] = useState("");
-          const [editTags, setEditTags] = useState("");
-          const [editMain, setEditMain] = useState("");
-          const [editPantry, setEditPantry] = useState("");
-          const [editPrep, setEditPrep] = useState("");
-          const [editCook, setEditCook] = useState("");
-          const [errorMsg, setErrorMsg] = useState("");
+        function DishCard({ dish, onAdd, onOpen, onLogClick }) {
+          const displayIngredients = dish.mainIngredients || []; const caloriesPerServing = Math.round((dish.calories || 0) / 2);
+          return h("article", { className: "overflow-hidden rounded-lg border border-white/70 bg-white/80 shadow-soft flex flex-col justify-between" },
+            h("div", null,
+              h("div", { className: "dish-art h-40", style: { "--accent-a": dish.accent[0], "--accent-b": dish.accent[1], "--accent-c": dish.accent[2] } }),
+              h("div", { className: "space-y-4 p-5 pb-2" },
+                h("div", null,
+                  h("div", { className: "mb-1 flex items-start justify-between gap-3" },
+                    h("button", { onClick: onOpen, className: "min-w-0 text-left text-xl font-semibold leading-tight underline-offset-4 hover:text-clay hover:underline focus:outline-none" }, dish.name),
+                    h("span", { className: "shrink-0 rounded-full bg-oat px-3 py-1 text-sm text-cedar" }, dish.time)
+                  ),
+                  h("div", { className: "flex items-center gap-2 text-sm text-amber-600 font-bold mb-2 h-5" },
+                    dish.avgRating !== null ? `⭐ ${dish.avgRating} (${dish.logCount} logs)` : '⭐ New (No logs)'
+                  ),
+                  h("p", { className: "text-sm leading-6 text-cedar/70 line-clamp-2" }, dish.subtitle),
+                  h("div", { className: "mt-3 flex flex-wrap gap-2" },
+                    h("span", { className: "rounded-full bg-clay/10 px-3 py-1 text-sm font-semibold text-clay" }, caloriesPerServing + " kcal / serving"),
+                    (dish.tags || []).map(tag => h("span", { key: tag, className: "rounded-full bg-white px-3 py-1 text-sm text-cedar/70" }, tag))
+                  )
+                ),
+                h("div", { className: "flex flex-wrap gap-1.5" },
+                  displayIngredients.slice(0, 3).map(item => h("span", { key: item.name, className: "rounded-full bg-cream px-2.5 py-1 text-xs text-cedar" }, item.name))
+                )
+              )
+            ),
+            h("div", { className: "p-5 pt-2 grid grid-cols-2 gap-2" },
+              h("button", { onClick: onLogClick, className: "rounded-lg border border-clay text-clay px-3 py-2.5 text-sm font-semibold shadow-sm hover:bg-cream" }, "📝 Log Cook"),
+              h("button", { onClick: onAdd, className: "rounded-lg bg-clay text-white px-3 py-2.5 text-sm font-semibold shadow-sm hover:bg-cedar" }, "Add to List")
+            )
+          );
+        }
 
-          // 当点击 Edit 按钮时，反填当前菜谱的全部数据
+        // ==========================================
+        // 🧱 RecipeModal Component (Added Logs Review list & Log link)
+        // ==========================================
+        function RecipeModal({ dish, historyLogs, onClose, onDelete, onUpdate, onLogClick }) {
+          const [isEditing, setIsEditing] = useState(false);
+          const [editName, setEditName] = useState(""); const [editTags, setEditTags] = useState(""); const [editMain, setEditMain] = useState(""); const [editPantry, setEditPantry] = useState(""); const [editPrep, setEditPrep] = useState(""); const [editCook, setEditCook] = useState(""); const [errorMsg, setErrorMsg] = useState("");
+
           function enterEditMode() {
-            setEditName(dish.name || "");
-            setEditTags((dish.tags || []).join(", "));
+            setEditName(dish.name || ""); setEditTags((dish.tags || []).join(", "));
             setEditMain((dish.mainIngredients || []).map(i => `${i.name}, ${i.qty}, ${i.unit}`).join("\n"));
             setEditPantry((dish.pantryIngredients || []).map(i => `${i.name}, ${i.qty}, ${i.unit}`).join("\n"));
-            setEditPrep((dish.preparation || []).join("\n"));
-            setEditCook((dish.cooking || []).join("\n"));
-            setIsEditing(true);
+            setEditPrep((dish.preparation || []).join("\n")); setEditCook((dish.cooking || []).join("\n")); setIsEditing(true);
           }
 
-          // 🔒 二次确认修改逻辑
           async function handleSave(e) {
             e.preventDefault(); setErrorMsg("");
             const name = editName.trim(); const pm = parseIngredients(editMain, "main"); const pp = parseIngredients(editPantry, "pantry");
             const tags = parseTags(editTags); const prep = editPrep.split("\n").map(l => l.trim()).filter(Boolean); const cook = editCook.split("\n").map(l => l.trim()).filter(Boolean);
-            if (!name || pm.length === 0) { setErrorMsg("请至少输入菜名和一个主配料噢！"); return; }
+            if (!name || pm.length === 0) { setErrorMsg("Recipe name and at least one main ingredient are required!"); return; }
 
-            if (window.confirm("确定要保存对这道菜谱的修改吗？✨")) {
+            if (window.confirm("Are you sure you want to save changes to this recipe? ✨")) {
               const ok = await onUpdate(dish.id, { name, subtitle: generateSubtitle(name, pm), tags, preparation: prep, cooking: cook }, pm.concat(pp));
-              if (ok) setIsEditing(false); else setErrorMsg("云端存储失败，请重试！");
+              if (ok) setIsEditing(false); else setErrorMsg("Cloud execution failed, please retry!");
             }
           }
 
-          // 🔒 二次确认删除逻辑
           function handleDeleteClick() {
-            if (window.confirm(`⚠️ 极其严肃的警报：\n你确定要将『${dish.name}』从云端永久抹除吗？\n删除后你男朋友手机上也同步消失，无法撤销噢！`)) {
+            if (window.confirm(`⚠️ Critical Alert:\nAre you sure you want to permanently delete "${dish.name}" from the cloud?\nThis will instantly reflect on your boyfriend's screen and cannot be undone!`)) {
               onDelete(dish.id);
             }
           }
 
           return h("div", { className: "fixed inset-0 z-50 grid place-items-center bg-ink/35 px-4 backdrop-blur-sm" },
-            h("div", { className: "max-h-[88vh] w-full max-w-3xl overflow-auto rounded-xl bg-cream p-6 shadow-soft transition-all" },
-              
-              // A. 查阅状态下渲染普通菜单面板
+            h("div", { className: "max-h-[88vh] w-full max-w-3xl overflow-auto rounded-xl bg-cream p-6 shadow-soft" },
               !isEditing ? h("div", null,
                 h("div", { className: "mb-6 flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-cedar/10 pb-4" },
                   h("div", null, h("p", { className: "mb-1 text-sm font-medium uppercase text-clay" }, "Recipe details"), h("h2", { className: "text-3xl font-semibold text-ink" }, dish.name), h("p", { className: "mt-1 text-sm text-cedar/65" }, dish.source)),
                   h("div", { className: "flex flex-wrap gap-2 shrink-0" },
+                    h("button", { onClick: onLogClick, className: "rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700" }, "📝 Log Cooking"),
                     dish.custom !== false ? h("button", { onClick: enterEditMode, className: "rounded-lg bg-clay px-4 py-2 text-sm font-semibold text-white hover:bg-cedar" }, "✏️ Edit Recipe") : h("span", { className: "rounded-lg bg-oat px-3 py-2 text-xs font-semibold text-cedar/65" }, "🔒 Built-in Recipe"),
                     dish.custom !== false && h("button", { onClick: handleDeleteClick, className: "rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800" }, "🗑️ Delete"),
                     h("button", { onClick: onClose, className: "rounded-lg bg-white border border-cedar/20 px-4 py-2 text-sm font-semibold text-cedar hover:bg-oat" }, "Close")
                   )
                 ),
                 h(IngredientSection, { title: "Main Ingredients", items: dish.mainIngredients || [] }), h(IngredientSection, { title: "Pantry Ingredients", items: dish.pantryIngredients || [] }),
-                h(StepSection, { title: "Preparation", steps: dish.preparation || [] }), h(StepSection, { title: "Cooking", steps: dish.cooking || [] })
+                h(StepSection, { title: "Preparation", steps: dish.preparation || [] }), h(StepSection, { title: "Cooking", steps: dish.cooking || [] }),
+                
+                // 🚀 History timeline inside Modal
+                h("section", { className: "mt-6 border-top border-cedar/10 pt-4" },
+                  h("h3", { className: "mb-3 text-sm font-semibold uppercase text-clay" }, "Cooking Logs History"),
+                  historyLogs.length === 0 ? h("p", { className: "text-sm text-cedar/65 italic" }, "No logs recorded yet for this meal. Be the first to cook it!") : 
+                  h("div", { className: "space-y-2 max-h-40 overflow-auto pr-1" },
+                    historyLogs.map(l => h("div", { key: l.id, className: "bg-white p-3 rounded-lg border border-cedar/5 text-sm" },
+                      h("div", { className: "flex justify-between font-bold text-ink" }, h("span", null, "⭐ ".repeat(l.rating)), h("span", { className: "text-xs font-medium text-cedar/60" }, l.cooking_date)),
+                      l.notes && h("p", { className: "mt-1.5 text-cedar/80 text-xs leading-5" }, l.notes)
+                    ))
+                  )
+                )
               ) : 
-
-              // B. 点击 Edit 变身复古奶油风全功能修改表单
               h("form", { onSubmit: handleSave, className: "space-y-4" },
                 h("div", { className: "flex items-center justify-between border-b border-cedar/10 pb-3" },
-                  h("div", null, h("h2", { className: "text-2xl font-bold text-ink" }, "修改菜谱详情"), h("p", { className: "text-xs text-clay" }, "正在对云端关系型数据进行动态校准...")),
+                  h("div", null, h("h2", { className: "text-2xl font-bold text-ink" }, "Edit Recipe Details"), h("p", { className: "text-xs text-clay" }, "Calibrating cloud database schema in real time...")),
                   h("div", { className: "flex gap-2" },
-                    h("button", { type: "button", onClick: () => setIsEditing(false), className: "px-4 py-2 bg-white text-sm font-semibold rounded-lg" }, "取消"),
-                    h("button", { type: "submit", className: "px-4 py-2 bg-ink text-white text-sm font-semibold rounded-lg hover:bg-cedar" }, "💾 保存修改")
+                    h("button", { type: "button", onClick: () => setIsEditing(false), className: "px-4 py-2 bg-white text-sm font-semibold rounded-lg" }, "Cancel"),
+                    h("button", { type: "submit", className: "px-4 py-2 bg-ink text-white text-sm font-semibold rounded-lg hover:bg-cedar" }, "💾 Save Changes")
                   )
                 ),
                 h("div", { className: "grid gap-4 md:grid-cols-2" },
                   h("div", { className: "space-y-4" },
-                    h(Field, { label: "菜谱名称", value: editName, onChange: setEditName }),
-                    h(Field, { label: "分类标签 (逗号分隔)", value: editTags, onChange: setEditTags }),
-                    h(TextAreaField, { label: "做法准备步骤 (一行一步)", value: editPrep, onChange: setEditPrep, rows: 4 }),
-                    h(TextAreaField, { label: "开火烹饪步骤 (一行一步)", value: editCook, onChange: setEditCook, rows: 4 })
+                    h(Field, { label: "Recipe Name", value: editName, onChange: setEditName }), h(Field, { label: "Category Tags (comma separated)", value: editTags, onChange: setEditTags }),
+                    h(TextAreaField, { label: "Preparation Steps (one per line)", value: editPrep, onChange: setEditPrep, rows: 3 }), h(TextAreaField, { label: "Cooking Steps (one per line)", value: editCook, onChange: setEditCook, rows: 3 })
                   ),
                   h("div", { className: "space-y-4" },
-                    h(TextAreaField, { label: "主配料 (格式: 品名, 数量, 单位)", value: editMain, onChange: setEditMain, rows: 5, hint: "例如: Tomato, 2, pcs" }),
-                    h(TextAreaField, { label: "常备佐料 (格式: 品名, 数量, 单位)", value: editPantry, onChange: setEditPantry, rows: 5, hint: "例如: Oil, 1, tsp" })
+                    h(TextAreaField, { label: "Main Ingredients (Name, Qty, Unit)", value: editMain, onChange: setEditMain, rows: 4, hint: "e.g., Tomato, 2, pcs" }), h(TextAreaField, { label: "Pantry Ingredients (Name, Qty, Unit)", value: editPantry, onChange: setEditPantry, rows: 4, hint: "e.g., Oil, 1, tsp" })
                   )
                 ),
                 errorMsg && h("p", { className: "text-sm text-red-600 font-semibold" }, errorMsg)
               )
-
             )
           );
         }
 
         // ==========================================
-        // 🧱 其余通用高颜值 UI 零配件（保持高度聚合，逻辑不变）
+        // 🚀 NEW COMPONENT: LogCookingModal (English)
         // ==========================================
-        function DishCard({ dish, onAdd, onOpen }) {
-          const displayIngredients = dish.mainIngredients || []; const caloriesPerServing = Math.round((dish.calories || 0) / 2);
-          return h("article", { className: "overflow-hidden rounded-lg border border-white/70 bg-white/80 shadow-soft" },
-            h("div", { className: "dish-art h-40", style: { "--accent-a": dish.accent[0], "--accent-b": dish.accent[1], "--accent-c": dish.accent[2] } }),
-            h("div", { className: "space-y-5 p-5" },
-              h("div", null,
-                h("div", { className: "mb-2 flex items-start justify-between gap-3" },
-                  h("button", { onClick: onOpen, className: "min-w-0 text-left text-xl font-semibold leading-tight underline-offset-4 hover:text-clay hover:underline focus:outline-none" }, dish.name),
-                  h("span", { className: "shrink-0 rounded-full bg-oat px-3 py-1 text-sm text-cedar" }, dish.time)
-                ),
-                h("p", { className: "text-sm leading-6 text-cedar/70 truncate" }, dish.subtitle),
-                h("div", { className: "mt-3 flex flex-wrap gap-2" },
-                  h("span", { className: "rounded-full bg-clay/10 px-3 py-1 text-sm font-semibold text-clay" }, caloriesPerServing + " kcal / serving"),
-                  (dish.tags || []).map(tag => h("span", { key: tag, className: "rounded-full bg-white px-3 py-1 text-sm text-cedar/70" }, tag))
+        function LogCookingModal({ dish, onClose, onSaveLog }) {
+          const [rating, setRating] = useState(5);
+          const [notes, setNotes] = useState("");
+          const [cookingDate, setCookingDate] = useState("Tonight");
+
+          async function handleSubmit(e) {
+            e.preventDefault();
+            const success = await onSaveLog(dish.id, rating, notes.trim(), cookingDate.trim());
+            if (success) onClose();
+          }
+
+          return h("div", { className: "fixed inset-0 z-50 grid place-items-center bg-ink/40 px-4 backdrop-blur-sm" },
+            h("form", { onSubmit: handleSubmit, className: "w-full max-w-md rounded-xl bg-cream p-6 shadow-soft border border-cedar/10 space-y-4" },
+              h("div", null, 
+                h("p", { className: "text-xs font-semibold uppercase tracking-wider text-clay" }, "Dinner Tracker"),
+                h("h2", { className: "text-2xl font-bold text-ink" }, `Log cooking for ${dish.name}`)
+              ),
+              h("label", { className: "block" },
+                h("span", { className: "block text-sm font-semibold text-cedar mb-1" }, "Score Rating (1-5 Stars)"),
+                h("select", { value: rating, onChange: (e) => setRating(Number(e.target.value)), className: "w-full rounded-lg bg-white px-3 py-2 text-sm outline-none border border-cedar/10" },
+                  h("option", { value: 5 }, "⭐⭐⭐⭐⭐ 5 - Perfectly delicious!"), h("option", { value: 4 }, "⭐⭐⭐⭐ 4 - Pretty good dish"), h("option", { value: 3 }, "⭐⭐⭐ 3 - Edible but average"), h("option", { value: 2 }, "⭐⭐ 2 - Something went wrong"), h("option", { value: 1 }, "⭐ 1 - Complete kitchen disaster")
                 )
               ),
-              h("div", { className: "flex flex-wrap gap-2" },
-                displayIngredients.slice(0, 4).map(item => h("span", { key: item.name, className: "rounded-full bg-cream px-3 py-1 text-sm text-cedar" }, item.name + " - " + formatAmount(item.qty, item.unit)))
-              ),
-              h("button", { onClick: onAdd, className: "w-full rounded-lg bg-clay px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-cedar" }, "Add to Cook List")
+              h(Field, { label: "Cooked Time / Date", value: cookingDate, onChange: setCookingDate, placeholder: "e.g., Tonight, Last Sunday, June 22" }),
+              h(TextAreaField, { label: "Chef Notes & Thoughts", value: notes, onChange: setNotes, rows: 3, placeholder: "How did it taste? Add less salt next time..." }),
+              h("div", { className: "flex justify-end gap-2 pt-2 border-t border-cedar/10" },
+                h("button", { type: "button", onClick: onClose, className: "px-4 py-2 text-sm bg-white rounded-lg font-semibold" }, "Cancel"),
+                h("button", { type: "submit", className: "px-4 py-2 bg-clay text-white text-sm font-semibold rounded-lg hover:bg-cedar" }, "🚀 Commit to History")
+              )
             )
           );
         }
 
+        // ==========================================
+        // 🧱 Standard Layout Components (Pure English UI)
+        // ==========================================
         function Sidebar(props) { return h("aside", { className: "space-y-4" }, h(CookList, props), h(InventoryPanel, props), h(GroceryPanel, props)); }
         function CookList({ orderItems, onClear, onUpdate, onRemove }) {
           return h("div", { className: "space-y-4" },
@@ -500,9 +583,6 @@
           );
         }
 
-        function IngredientSection({ title, items }) { return h("section", { className: "mb-5" }, h("h3", { className: "mb-2 text-sm font-semibold uppercase text-clay" }, title), h("div", { className: "flex flex-wrap gap-2" }, items.length ? items.map(i => h("span", { key: i.name, className: "rounded-full bg-white px-3 py-1 text-sm text-cedar" }, i.name + " - " + formatAmount(i.qty, i.unit))) : h("span", { className: "text-sm text-cedar/60" }, "None"))); }
-        function StepSection({ title, steps }) { return h("section", { className: "mb-5" }, h("h3", { className: "mb-2 text-sm font-semibold uppercase text-clay" }, title), h("ol", { className: "space-y-3" }, steps.map((s, idx) => h("li", { key: idx, className: "rounded-lg bg-white/75 p-4 leading-7 text-cedar" }, h("span", { className: "mr-3 font-semibold text-clay" }, String(idx + 1).padStart(2, "0")), s)))); }
-
         function AddDishModal({ form, formError, setForm, onClose, onSubmit }) {
           const pm = parseIngredients(form.mainIngredients, "main"), pp = parseIngredients(form.pantryIngredients, "pantry"), pt = parseTags(form.tags);
           return h("div", { className: "fixed inset-0 z-50 grid place-items-center bg-ink/35 px-4 backdrop-blur-sm" },
@@ -512,8 +592,8 @@
                 h("div", { className: "space-y-4" },
                   h(Field, { label: "Dish name", value: form.name, onChange: (v) => setForm(c => Object.assign({}, c, { name: v })), placeholder: "Mapo Tofu" }),
                   h(Field, { label: "Tags", value: form.tags, onChange: (v) => setForm(c => Object.assign({}, c, { tags: v })), placeholder: "Chinese, Dinner" }),
-                  h(TextAreaField, { label: "Main ingredients", value: form.mainIngredients, onChange: (v) => setForm(c => Object.assign({}, c, { mainIngredients: v })), rows: 3, hint: "格式: 品名, 数量, 单位 (一行一个)" }),
-                  h(TextAreaField, { label: "Pantry ingredients", value: form.pantryIngredients, onChange: (v) => setForm(c => Object.assign({}, c, { pantryIngredients: v })), rows: 3, hint: "格式: 品名, 数量, 单位 (一行一个)" }),
+                  h(TextAreaField, { label: "Main ingredients", value: form.mainIngredients, onChange: (v) => setForm(c => Object.assign({}, c, { mainIngredients: v })), rows: 3, hint: "Format: Ingredient, Qty, Unit (one per line)" }),
+                  h(TextAreaField, { label: "Pantry ingredients", value: form.pantryIngredients, onChange: (v) => setForm(c => Object.assign({}, c, { pantryIngredients: v })), rows: 3, hint: "Format: Ingredient, Qty, Unit (one per line)" }),
                   h(TextAreaField, { label: "Preparation", value: form.preparation, onChange: (v) => setForm(c => Object.assign({}, c, { preparation: v })), rows: 3 }),
                   h(TextAreaField, { label: "Cooking", value: form.cooking, onChange: (v) => setForm(c => Object.assign({}, c, { cooking: v })), rows: 3 })
                 ),
@@ -530,7 +610,7 @@
         }
 
         function Field({ label, value, onChange, placeholder }) { return h("label", { className: "block" }, h("span", { className: "mb-1 block text-sm font-semibold text-cedar" }, label), h("input", { value, placeholder, onChange: (e) => onChange(e.target.value), className: "w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-clay" })); }
-        function TextAreaField({ label, value, onChange, rows, hint }) { return h("label", { className: "block" }, h("span", { className: "mb-1 block text-sm font-semibold text-cedar" }, label), h("textarea", { value, rows, onChange: (e) => onChange(e.target.value), className: "w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-clay" }), h("span", { className: "text-xs text-cedar/60 mt-0.5 block" }, hint)); }
+        function TextAreaField({ label, value, onChange, rows, hint, placeholder }) { return h("label", { className: "block" }, h("span", { className: "mb-1 block text-sm font-semibold text-cedar" }, label), h("textarea", { value, rows, placeholder, onChange: (e) => onChange(e.target.value), className: "w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-clay" }), h("span", { className: "text-xs text-cedar/60 mt-0.5 block" }, hint)); }
         function Stat({ label, value }) { return h("div", { className: "min-w-20 rounded-xl bg-cream px-4 py-3 text-center" }, h("p", { className: "text-2xl font-semibold text-ink" }, value), h("p", { className: "mt-1 text-xs font-medium uppercase text-cedar/60" }, label)); }
 
         ReactDOM.createRoot(document.getElementById("root")).render(h(App));
