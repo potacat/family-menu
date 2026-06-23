@@ -34,7 +34,6 @@
     </div>
 
     <script type="text/babel">
-      // 🛠️ Exposed globally to prevent out-of-scope hook rendering errors
       const h = React.createElement;
       const { useEffect, useMemo, useState } = React;
 
@@ -116,7 +115,6 @@
           return ensureArray(masterIngredients).filter(m => m.name.toLowerCase().includes(inventoryForm.name.toLowerCase())).slice(0, 4);
         }, [inventoryForm.name, masterIngredients]);
 
-        // Automatically assign standard unit if name matches a database ingredient item
         const activeMatchedIngredient = useMemo(() => {
           return ensureArray(masterIngredients).find(mi => mi.name.toLowerCase() === inventoryForm.name.trim().toLowerCase());
         }, [inventoryForm.name, masterIngredients]);
@@ -226,7 +224,7 @@
         return h("div", { className: "bg-white p-3 rounded-lg text-sm border shadow-sm" },
           h("div", { className: "flex justify-between items-center" },
             h("div", { className: "font-bold text-ink" }, h("span", { className: "text-amber-500 mr-2" }, `⭐ ${log.rating}/10`), h("span", { className: "text-xs font-medium text-cedar/60" }, log.cooking_date)),
-            h("button", { onClick: onDelete, type: "button", className: "text-xs text-red-500 hover:text-red-700 font-semibold px-2" }, "Delete")
+            h("button", { onClick: () => executeSecureAction(onDelete), type: "button", className: "text-xs text-red-500 hover:text-red-700 font-semibold px-2" }, "Delete")
           ),
           log.notes && h("div", { className: "mt-2" },
             !showNote ? h("button", { onClick: () => executeSecureAction(() => setShowNote(true)), type: "button", className: "text-xs text-clay underline font-medium" }, "View Note") :
@@ -243,14 +241,12 @@
         const [editName, setEditName] = useState(""); const [editOriginalName, setEditOriginalName] = useState(""); const [editTags, setEditTags] = useState(""); const [editPrep, setEditPrep] = useState(""); const [editCook, setEditCook] = useState("");
         const [editRows, setEditRows] = useState([]);
 
-        function enterEditModeSecure() {
-          executeSecureAction(() => {
-            setEditName(dish.name); setEditOriginalName(dish.original_name || ""); setEditTags(ensureArray(dish.tags).join(", "));
-            setEditPrep(ensureArray(dish.preparation).join("\n")); setEditCook(ensureArray(dish.cooking).join("\n"));
-            const combined = ensureArray(dish.mainIngredients).concat(ensureArray(dish.pantryIngredients));
-            setEditRows(combined.map(i => ({ key: Math.random(), searchQuery: i.name, ingredient_id: i.id, qty: String(i.qty), unit: i.unit, role: i.role, showSuggestions: false })));
-            setIsEditing(true);
-          });
+        function enterEditMode() {
+          setEditName(dish.name); setEditOriginalName(dish.original_name || ""); setEditTags(ensureArray(dish.tags).join(", "));
+          setEditPrep(ensureArray(dish.preparation).join("\n")); setEditCook(ensureArray(dish.cooking).join("\n"));
+          const combined = ensureArray(dish.mainIngredients).concat(ensureArray(dish.pantryIngredients));
+          setEditRows(combined.map(i => ({ key: Math.random(), searchQuery: i.name, ingredient_id: i.id, qty: String(i.qty), unit: i.unit, role: i.role, showSuggestions: false })));
+          setIsEditing(true);
         }
 
         return h("div", { className: "fixed inset-0 z-50 grid place-items-center bg-ink/35 px-4 backdrop-blur-sm" },
@@ -259,9 +255,9 @@
               h("div", { className: "mb-6 flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-cedar/10 pb-4" },
                 h("div", null, h("p", { className: "mb-1 text-sm font-medium uppercase text-clay" }, "Recipe"), h("h2", { className: "text-3xl font-semibold text-ink leading-tight" }, dish.name), dish.original_name && h("p", { className: "text-sm text-cedar/50 font-medium" }, dish.original_name), h("p", { className: "mt-2 text-xs text-cedar/65" }, dish.source)),
                 h("div", { className: "flex flex-wrap gap-2 shrink-0 animate-fade-in" },
-                  h("button", { onClick: onLogClick, className: "rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700" }, "📝 Log"),
-                  h("button", { onClick: enterEditModeSecure, className: "rounded-lg bg-clay px-4 py-2 text-sm font-semibold text-white hover:bg-cedar" }, "✏️ Edit Recipe"),
-                  h("button", { onClick: () => onDelete(dish.id), className: "rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800" }, "🗑️ Delete"),
+                  h("button", { onClick: () => executeSecureAction(onLogClick), className: "rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700" }, "📝 Log"),
+                  h("button", { onClick: () => executeSecureAction(enterEditMode), className: "rounded-lg bg-clay px-4 py-2 text-sm font-semibold text-white hover:bg-cedar" }, "✏️ Edit Recipe"),
+                  h("button", { onClick: () => executeSecureAction(() => onDelete(dish.id)), className: "rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800" }, "🗑️ Delete"),
                   h("button", { onClick: onClose, className: "rounded-lg bg-white border px-4 py-2 text-sm font-semibold text-cedar" }, "Close")
                 )
               ),
@@ -275,12 +271,12 @@
                 )
               )
             ) : 
-            h("div", { className: "space-y-4" },
+            h("form", { onSubmit: (e) => { e.preventDefault(); onUpdate(dish.id, { name: editName, original_name: editOriginalName, subtitle: generateSubtitle(editName, editRows.map(er => ({ name: er.searchQuery }))), tags: parseTags(editTags), preparation: editPrep.split('\n').filter(Boolean), cooking: editCook.split('\n').filter(Boolean) }, editRows); }, className: "space-y-4" },
               h("div", { className: "flex items-center justify-between border-b pb-3" },
                 h("h2", { className: "text-2xl font-bold" }, "Modify Recipe Entries"),
                 h("div", { className: "flex gap-2" },
-                  h("button", { onClick: () => setIsEditing(false), className: "px-4 py-2 bg-white text-sm font-semibold rounded-lg" }, "Cancel"),
-                  h("button", { onClick: () => onUpdate(dish.id, { name: editName, original_name: editOriginalName, subtitle: generateSubtitle(editName, editRows.map(er => ({ name: er.searchQuery }))), tags: parseTags(editTags), preparation: editPrep.split('\n').filter(Boolean), cooking: editCook.split('\n').filter(Boolean) }, editRows), className: "px-4 py-2 bg-ink text-white text-sm font-semibold rounded-lg" }, "💾 Save Changes")
+                  h("button", { type: "button", onClick: () => setIsEditing(false), className: "px-4 py-2 bg-white text-sm font-semibold rounded-lg" }, "Cancel"),
+                  h("button", { type: "submit", className: "px-4 py-2 bg-ink text-white text-sm font-semibold rounded-lg" }, "💾 Save Changes")
                 )
               ),
               h("div", { className: "grid gap-4 md:grid-cols-2" },
@@ -288,10 +284,10 @@
                   h(Field, { label: "Recipe Name (English)", value: editName, onChange: setEditName }),
                   h(Field, { label: "Original Name (Optional)", value: editOriginalName, onChange: setEditOriginalName }),
                   h(Field, { label: "Tags", value: editTags, onChange: setEditTags }),
-                  h(TextAreaField, { label: "Preparation Steps", value: editPrep, onChange: setEditPrep, rows: 3 }), h(TextAreaField, { label: "Cooking Steps", value: editCook, onChange: setEditCook, rows: 3 })
+                  h(TextAreaField, { label: "Preparation", value: editPrep, onChange: setEditPrep, rows: 3 }), h(TextAreaField, { label: "Cooking", value: editCook, onChange: setEditCook, rows: 3 })
                 ),
                 h("div", { className: "space-y-3" },
-                  h("div", { className: "flex justify-between items-center" }, h("span", { className: "text-sm font-bold" }, "Add Ingredients"), h("button", { onClick: () => setEditRows(c => ensureArray(c).concat({ key: Math.random(), searchQuery: '', ingredient_id: null, qty: '', unit: 'g', role: 'main', showSuggestions: false })), className: "bg-ink text-white text-xs px-2 py-1 rounded" }, "+ Add Line")),
+                  h("div", { className: "flex justify-between items-center" }, h("span", { className: "text-sm font-bold" }, "Add Ingredients"), h("button", { type: "button", onClick: () => setEditRows(c => ensureArray(c).concat({ key: Math.random(), searchQuery: '', ingredient_id: null, qty: '', unit: 'g', role: 'main', showSuggestions: false })), className: "bg-ink text-white text-xs px-2 py-1 rounded" }, "+ Add Line")),
                   h("div", { className: "space-y-2" },
                     ensureArray(editRows).map((row, idx) => h(IngredientRepeaterRow, { key: row.key, row, masterIngredients, onChange: (updated) => setEditRows(c => ensureArray(c).map((r, i) => i === idx ? updated : r)), onRemove: () => setEditRows(c => ensureArray(c).filter((_, i) => i !== idx)) }))
                   )
@@ -305,7 +301,7 @@
       function LogCookingModal({ dish, onClose, onSaveLog }) {
         const [rating, setRating] = useState(10); const [notes, setNotes] = useState(""); const [cookingDate, setCookingDate] = useState(new Date().toISOString().split('T')[0]);
         return h("div", { className: "fixed inset-0 z-50 grid place-items-center bg-ink/40 px-4 backdrop-blur-sm" },
-          h("form", { onSubmit: async (e) => { e.preventDefault(); const ok = await onSaveLog(dish.id, rating, notes.trim(), cookingDate.trim()); if (ok) onClose(); }, className: "w-full max-w-md rounded-xl bg-cream p-6 shadow-soft space-y-4" },
+          h("form", { onSubmit: (e) => { e.preventDefault(); onSaveLog(dish.id, rating, notes.trim(), cookingDate.trim()); onClose(); }, className: "w-full max-w-md rounded-xl bg-cream p-6 shadow-soft space-y-4" },
             h("h2", { className: "text-2xl font-bold" }, `Logging ${dish.name}`),
             h(Field, { type: "number", min: "0", max: "10", step: "0.1", label: "Score Rating (0-10)", value: rating, onChange: setRating }),
             h(Field, { type: "date", label: "Date", value: cookingDate, onChange: setCookingDate }), 
@@ -527,75 +523,66 @@
 
         const servings = orderItems.reduce((sum, item) => sum + item.count * 2, 0);
 
-        function handleSaveNewRecipe() {
-          executeSecureAction(async () => {
-            const name = formName.trim(); const originalName = formOriginalName.trim();
-            if (!name || formIngredients.length === 0) { setFormError("Recipe name and ingredients are required!"); return; }
-            const prepArr = formPrep.split('\n').map(l => l.trim()).filter(Boolean);
-            const cookArr = formCook.split('\n').map(l => l.trim()).filter(Boolean);
+        async function handleSaveNewRecipe(e) {
+          if (e) e.preventDefault(); // 📌 Fixed form submission flash
+          const name = formName.trim(); const originalName = formOriginalName.trim();
+          if (!name || formIngredients.length === 0) { setFormError("Recipe name and ingredients are required!"); return; }
+          const prepArr = formPrep.split('\n').map(l => l.trim()).filter(Boolean);
+          const cookArr = formCook.split('\n').map(l => l.trim()).filter(Boolean);
 
-            try {
-              const ingredientLinks = await resolveIngredientsPayload(formIngredients);
-              const { data: newRec, error } = await supabase.from('recipes').insert([{
-                name, original_name: originalName, subtitle: generateSubtitle(name, formIngredients.map(fi => ({ name: fi.searchQuery }))), time_estimate: "15 min", tags: parseTags(formTags), accent: ["#d78a55", "#8fbc8f", "#f0c36a"], preparation: prepArr, cooking: cookArr, is_custom: true
-              }]).select().single();
+          try {
+            const ingredientLinks = await resolveIngredientsPayload(formIngredients);
+            const { data: newRec, error } = await supabase.from('recipes').insert([{
+              name, original_name: originalName, subtitle: generateSubtitle(name, formIngredients.map(fi => ({ name: fi.searchQuery }))), time_estimate: "15 min", tags: parseTags(formTags), accent: ["#d78a55", "#8fbc8f", "#f0c36a"], preparation: prepArr, cooking: cookArr, is_custom: true
+            }]).select().single();
 
-              if (error || !newRec) throw new Error("Insertion rejected");
-              const junctionRows = ingredientLinks.map(link => ({ recipe_id: newRec.id, ingredient_id: link.ingredient_id, qty: link.qty }));
-              await supabase.from('recipe_ingredients').insert(junctionRows);
+            if (error || !newRec) throw new Error("Insertion rejected");
+            const junctionRows = ingredientLinks.map(link => ({ recipe_id: newRec.id, ingredient_id: link.ingredient_id, qty: link.qty }));
+            await supabase.from('recipe_ingredients').insert(junctionRows);
 
-              bootstrapCloudBistro();
-              setIsFormOpen(false); resetFormRepeater();
-            } catch (err) {
-              setFormError("Junction link storage fault.");
-            }
-          });
+            bootstrapCloudBistro();
+            setIsFormOpen(false); resetFormRepeater();
+          } catch (err) {
+            setFormError("Junction link storage fault.");
+          }
         }
 
         function handleUpdateRecipeSecure(id, meta, incomingRows) {
-          executeSecureAction(async () => {
-            await supabase.from('recipes').update({ name: meta.name, original_name: meta.original_name, subtitle: meta.subtitle, tags: meta.tags, preparation: meta.preparation, cooking: meta.cooking }).eq('id', id);
-            await supabase.from('recipe_ingredients').delete().eq('recipe_id', id);
-            const activeLinks = await resolveIngredientsPayload(incomingRows);
-            const junctionRows = activeLinks.map(link => ({ recipe_id: id, ingredient_id: link.ingredient_id, qty: link.qty }));
-            await supabase.from('recipe_ingredients').insert(junctionRows);
-            bootstrapCloudBistro();
-            setSelectedDish(null);
-          });
+          await supabase.from('recipes').update({ name: meta.name, original_name: meta.original_name, subtitle: meta.subtitle, tags: meta.tags, preparation: meta.preparation, cooking: meta.cooking }).eq('id', id);
+          await supabase.from('recipe_ingredients').delete().eq('recipe_id', id);
+          const activeLinks = await resolveIngredientsPayload(incomingRows);
+          const junctionRows = activeLinks.map(link => ({ recipe_id: id, ingredient_id: link.ingredient_id, qty: link.qty }));
+          supabase.from('recipe_ingredients').insert(junctionRows).then(() => bootstrapCloudBistro());
+          setSelectedDish(null);
         }
 
         function handleDeleteRecipeSecure(id) {
-          executeSecureAction(async () => {
-            await supabase.from('recipes').delete().eq('id', id);
+          supabase.from('recipes').delete().eq('id', id).then(() => {
             setRecipes(curr => curr.filter(r => r.id !== id));
             setSelectedDish(null);
           });
         }
 
         function handleAddLogSecure(recipeId, rating, notes, cookingDate) {
-          executeSecureAction(async () => {
-            const { data } = await supabase.from('cooking_history').insert([{ recipe_id: recipeId, rating: Number(rating), notes, cooking_date: cookingDate }]).select().single();
+          supabase.from('cooking_history').insert([{ recipe_id: recipeId, rating: Number(rating), notes, cooking_date: cookingDate }]).select().single().then(({ data }) => {
             if (data) setCookingHistory(curr => [data].concat(ensureArray(curr)));
           });
         }
 
         function handleDeleteLogSecure(logId) {
-          executeSecureAction(async () => {
-            if (!window.confirm("Delete log record timeline entity? 🗑️")) return;
-            await supabase.from('cooking_history').delete().eq('id', logId);
+          supabase.from('cooking_history').delete().eq('id', logId).then(() => {
             setCookingHistory(curr => ensureArray(curr).filter(l => l.id !== logId));
           });
         }
 
         function handleAddInventorySecure(e) {
-          e.preventDefault();
+          if (e) e.preventDefault(); // 📌 Fixed form submission flash
           executeSecureAction(async () => {
             const inputName = titleCase(inventoryForm.name.trim());
             if (!inputName || Number(inventoryForm.qty) <= 0) { alert("Invalid name or quantity level entry."); return; }
 
             let targetIng = ensureArray(masterIngredients).find(mi => mi.name.toLowerCase() === inputName.toLowerCase());
             
-            // 🚀 Dynamic New Ingredient Pipeline addition hook
             if (!targetIng) {
               const cleanUnit = normalizeUnit(inventoryForm.unit);
               const { data: newIng, error } = await supabase.from('ingredients').insert([{
@@ -618,17 +605,9 @@
         }
 
         function handleRemoveInventorySecure(id) {
-          executeSecureAction(async () => {
-            if (!window.confirm("Wipe inventory stock allocation reference?")) return;
-            await supabase.from('pantry_inventory').delete().eq('id', id);
+          if (!window.confirm("Wipe inventory stock allocation reference?")) return;
+          supabase.from('pantry_inventory').delete().eq('id', id).then(() => {
             setInventory(c => ensureArray(c).filter(i => i.id !== id));
-          });
-        }
-
-        function handleEditInventorySecure(item) {
-          executeSecureAction(async () => {
-            setEditingInventoryId(item.id);
-            setEditingInventoryIdQty(String(item.qty));
           });
         }
 
@@ -639,27 +618,6 @@
           setEditingInventoryId(null);
         }
 
-        function triggerOrderSubmission(checkoutData) {
-          let bodyText = `Hi Sai,\n\nAn order has been submitted to Sai's Bistro by ${checkoutData.name}.\n`;
-          if (checkoutData.note) bodyText += `Note: "${checkoutData.note}"\n\n`;
-          bodyText += `=== ORDERED DISHES ===\n`;
-          orderItems.forEach(item => { bodyText += `- ${item.name} (${item.count * 2} servings)\n`; });
-          bodyText += `\n=== REQUIRED GROCERY LIST ===\n`;
-          if (groceryList.length === 0) bodyText += `All items are fully stocked!\n`;
-          else groceryList.forEach(item => { bodyText += `- ${item.name}: Need ${formatAmount(item.buyQty, item.unit)}\n`; });
-
-          navigator.clipboard.writeText(bodyText).then(() => {
-            setOrders([]);
-            setIsCheckoutOpen(false);
-            alert("Order copied to your clipboard! You can now paste it in a text to Sai to finalize your order! 📱🎉");
-          });
-        }
-
-        function openNewFormModal() {
-          setFormIngredients([{ key: Date.now(), searchQuery: '', ingredient_id: null, qty: '', unit: 'g', role: 'main', showSuggestions: false }]);
-          setIsFormOpen(true);
-        }
-
         return h("main", { className: "mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-8 px-5 py-6 sm:px-8 lg:px-10" },
           h("header", { className: "flex flex-col gap-5 border-b border-cedar/10 pb-6 lg:flex-row lg:items-end lg:justify-between" },
             h("div", { className: "max-w-2xl" },
@@ -667,7 +625,7 @@
               h("p", { className: "mt-3 max-w-xl text-base leading-7 text-cedar/75" }, "Welcome to Sai's Bistro, our private kitchen getaway. Explore customized recipes, monitor pantry stock parameters, and coordinate dinner logs.")
             ),
             h("div", { className: "flex flex-col gap-3 sm:items-end" },
-              h("button", { onClick: openNewFormModal, className: "rounded-lg bg-ink px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-cedar" }, "Add to Menu"),
+              h("button", { onClick: () => executeSecureAction(openNewFormModal), className: "rounded-lg bg-ink px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-cedar" }, "Add to Menu"), // 📌 Intercepted prior to opening
               h("div", { className: "grid grid-cols-3 gap-3 rounded-lg border border-white/70 bg-white/65 p-3 shadow-soft backdrop-blur" },
                 h(Stat, { label: "Dishes", value: orderItems.length }), h(Stat, { label: "Servings", value: servings || 0 }), h(Stat, { label: "To Buy", value: groceryList.length })
               )
@@ -682,12 +640,12 @@
                 viewMode === "menu" && h("input", { value: searchQuery, placeholder: "Search recipes...", onChange: (e) => setSearchQuery(e.target.value), className: "w-full rounded-lg border border-white/70 bg-white/80 px-3 py-3 text-sm outline-none sm:max-w-xs focus:border-clay" })
               ),
               viewMode === "menu" ? h("div", { className: "grid gap-4 sm:grid-cols-2" },
-                ensureArray(visibleDishes).map(dish => h(DishCard, { key: dish.id, dish, onAdd: () => setOrders(c => c.find(o => o.id === dish.id) ? c.map(o => o.id === dish.id ? { id: o.id, count: o.count + 1 } : o) : c.concat({ id: dish.id, count: 1 })), onOpen: () => setSelectedDish(dish), onLogClick: () => setLoggingDish(dish) }))
-              ) : h(MainPaneInventoryModule, { inventory, inventoryForm, setInventoryForm, masterIngredients, editingInventoryId, editingInventoryQty, setEditingInventoryIdQty, onAddInventory: handleAddInventorySecure, onRemoveInventory: handleRemoveInventorySecure, onEditInventory: handleEditInventorySecure, onCommitInlineEdit: commitInlineInventoryEdit, onCancelInlineEdit: () => setEditingInventoryId(null) })
+                ensureArray(visibleDishes).map(dish => h(DishCard, { key: dish.id, dish, onAdd: () => setOrders(c => c.find(o => o.id === dish.id) ? c.map(o => o.id === dish.id ? { id: o.id, count: o.count + 1 } : o) : c.concat({ id: dish.id, count: 1 })), onOpen: () => setSelectedDish(dish), onLogClick: () => executeSecureAction(() => setLoggingDish(dish)) })) // 📌 Intercepted prior to logging pop-up
+              ) : h(MainPaneInventoryModule, { inventory, inventoryForm, setInventoryForm, masterIngredients, editingInventoryId, editingInventoryQty, setEditingInventoryIdQty, onAddInventory: handleAddInventorySecure, onRemoveInventory: (id) => executeSecureAction(() => handleRemoveInventorySecure(id)), onEditInventory: (item) => executeSecureAction(() => { setEditingInventoryId(item.id); setEditingInventoryIdQty(String(item.qty)); }), onCommitInlineEdit: () => executeSecureAction(commitInlineInventoryEdit), onCancelInlineEdit: () => setEditingInventoryId(null) })
             ),
             h(Sidebar, { viewMode, orderItems, requiredList, groceryList, coveredList, onClear: () => setOrders([]), onUpdate: (id, delta) => setOrders(c => ensureArray(c).map(o => o.id === id ? { id: o.id, count: Math.max(0, o.count + delta) } : o).filter(o => o.count > 0)), onSubmitCart: () => setIsCheckoutOpen(true) })
           ),
-          selectedDish && h(RecipeModal, { dish: selectedDish, historyLogs: ensureArray(cookingHistory).filter(l => Number(l.recipe_id) === selectedDish.id), masterIngredients, executeSecureAction, onClose: () => setSelectedDish(null), onDelete: handleDeleteRecipeSecure, onUpdate: handleUpdateRecipeSecure, onLogClick: () => { setLoggingDish(selectedDish); setSelectedDish(null); }, onDeleteLog: handleDeleteLogSecure }),
+          selectedDish && h(RecipeModal, { dish: selectedDish, historyLogs: ensureArray(cookingHistory).filter(l => Number(l.recipe_id) === selectedDish.id), masterIngredients, executeSecureAction, onClose: () => setSelectedDish(null), onDelete: handleDeleteRecipeSecure, onUpdate: handleUpdateRecipeSecure, onLogClick: () => setLoggingDish(selectedDish), onDeleteLog: handleDeleteLogSecure }),
           loggingDish && h(LogCookingModal, { dish: loggingDish, onClose: () => setLoggingDish(null), onSaveLog: handleAddLogSecure }),
           isFormOpen && h(AddDishModal, { formName, setFormName, formOriginalName, setFormOriginalName, formTags, setFormTags, formPrep, setFormPrep, formCook, setFormCook, formIngredients, setFormIngredients, masterIngredients, formError, onClose: () => setIsFormOpen(false), onSubmit: handleSaveNewRecipe }),
           isCheckoutOpen && h(CheckoutModal, { onClose: () => setIsCheckoutOpen(false), onConfirm: triggerOrderSubmission }),
