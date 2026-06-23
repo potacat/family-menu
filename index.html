@@ -193,33 +193,30 @@
       }
 
       function DishCard({ dish, onAdd, onOpen, onLogClick }) {
-        const displayIngredients = ensureArray(dish.mainIngredients);
         return h("article", { className: "overflow-hidden rounded-lg border border-white/70 bg-white/80 shadow-soft flex flex-col justify-between" },
           h("div", null,
             h("div", { className: "dish-art h-40", style: { "--accent-a": dish.accent[0], "--accent-b": dish.accent[1], "--accent-c": dish.accent[2] } }),
-            h("div", { className: "space-y-4 p-5 pb-2" },
+            h("div", { className: "p-5 pb-1 space-y-2.5" },
               h("div", null,
-                h("button", { onClick: onOpen, className: "min-w-0 text-left text-xl font-semibold leading-tight underline-offset-4 hover:text-clay hover:underline focus:outline-none block" }, dish.name),
-                dish.original_name && h("p", { className: "text-xs text-cedar/50 font-medium mt-0.5" }, dish.original_name),
-                h("div", { className: "flex items-center gap-2 text-xs text-amber-600 font-bold mt-2 mb-2" },
+                h("button", { onClick: onOpen, className: "min-w-0 text-left text-xl font-semibold leading-tight underline-offset-4 hover:text-clay hover:underline focus:outline-none inline-block" }, 
+                  dish.name,
+                  dish.original_name && h("span", { className: "text-sm text-cedar/50 font-medium ml-2" }, dish.original_name)
+                ),
+                h("div", { className: "flex items-center gap-2 text-xs text-amber-600 font-bold mt-1 mb-1" },
                   dish.avgRating !== null ? `⭐ ${dish.avgRating}/10 (${dish.logCount} logs)` : '⭐ New (No logs)',
                   h("span", { className: "text-cedar/30" }, "•"),
                   h("span", { className: "text-cedar/70" }, `${dish.calories} kcal`)
                 ),
-                h("p", { className: "text-sm leading-6 text-cedar/70 line-clamp-2 mt-2" }, dish.subtitle),
-                h("div", { className: "mt-3 flex flex-wrap gap-2" },
-                  h("span", { className: "rounded-full bg-oat px-3 py-0.5 text-xs text-cedar font-medium" }, dish.time),
-                  ensureArray(dish.tags).map(tag => h("span", { key: tag, className: "rounded-full bg-white px-3 py-0.5 text-xs text-cedar/70 border" }, tag))
+                h("p", { className: "text-sm leading-5 text-cedar/70 line-clamp-2 mt-1" }, dish.subtitle),
+                h("div", { className: "mt-2 flex flex-wrap gap-2" },
+                  ensureArray(dish.tags).map(tag => h("span", { key: tag", className: "rounded-full bg-white px-3 py-0.5 text-xs text-cedar/70 border" }, tag))
                 )
-              ),
-              h("div", { className: "flex flex-wrap gap-1.5" },
-                displayIngredients.slice(0, 3).map(item => h("span", { key: item.name, className: "rounded-full bg-cream px-2.5 py-1 text-xs text-cedar" }, item.name))
               )
             )
           ),
-          h("div", { className: "p-5 pt-2 grid grid-cols-2 gap-2" },
-            h("button", { onClick: onLogClick, className: "rounded-lg border border-clay text-clay px-3 py-2.5 text-sm font-semibold hover:bg-cream" }, "📝 Log"),
-            h("button", { onClick: onAdd, className: "rounded-lg bg-clay text-white px-3 py-2.5 text-sm font-semibold hover:bg-cedar" }, "Add to Cart")
+          h("div", { className: "p-5 pt-1 grid grid-cols-2 gap-2" },
+            h("button", { onClick: onLogClick, className: "rounded-lg border border-clay text-clay px-3 py-2 text-sm font-semibold hover:bg-cream" }, "📝 Log"),
+            h("button", { onClick: onAdd, className: "rounded-lg bg-clay text-white px-3 py-2 text-sm font-semibold hover:bg-cedar" }, "Add to Cart")
           )
         );
       }
