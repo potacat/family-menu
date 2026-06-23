@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Potacat Bistro (Cloud Menu)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18/umd/react.development.js"></script>
@@ -20,9 +20,11 @@
       };
     </script>
     <style>
+      /* Global overflow-x-hidden fix to prevent horizontal mobile wobble */
+      html, body { overflow-x: hidden; position: relative; width: 100%; }
       body { background: radial-gradient(circle at top left, rgba(238, 166, 94, 0.18), transparent 34rem), linear-gradient(135deg, #fffaf2 0%, #f8efe4 50%, #fffdf8 100%); }
       .wood-grain { background: linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.34)), repeating-linear-gradient(105deg, rgba(201, 121, 68, 0.10) 0 1px, transparent 1px 12px), #f8efe4; }
-      .dish-art { background: radial-gradient(circle at 50% 50%, rgba(255,255,255,.95) 0 30%, transparent 31%), radial-gradient(circle at 45% 45%, var(--accent-a) 0 14%, transparent 15%), radial-gradient(circle at 58% 52%, var(--accent-b) 0 13%, transparent 14%), radial-gradient(circle at 42% 60%, var(--accent-c) 0 8%, transparent 9%), radial-gradient(circle at 50% 50%, #f5e3cd 0 55%, #c97944 56% 62%, transparent 63%); }
+      .dish-art { background: radial-gradient(circle at 50% 50%, rgba(255,255,255,.95) 0 30%, transparent 31%), radial-gradient(circle at 45% 45%, var(--accent-a) 0 14%, transparent 15%), radial-gradient(circle at 58% 52%, var(--accent-b) 0 13%. var(--accent-c) 0 8%, transparent 9%), radial-gradient(circle at 50% 50%, #f5e3cd 0 55%, #c97944 56% 62%, transparent 63%); }
     </style>
   </head>
   <body class="min-h-screen text-ink antialiased">
@@ -61,6 +63,28 @@
       function ensureArray(val) { if (Array.isArray(val)) return val; if (typeof val === 'string') return val.split('\n').map(l => l.trim()).filter(Boolean); return []; }
 
       // ==========================================
+      // POTACAT CHEF CARTOON LOGO (SVG MODULE)
+      // ==========================================
+      function PotacatLogo() {
+        return h("svg", { width: "64", height: "64", viewBox: "0 0 64 64", className: "shrink-0 fill-none stroke-clay stroke-[2.5] stroke-linecap-round stroke-linejoin-round" },
+          // Chef Hat
+          h("path", { d: "M 22,20 C 22,14 26,10 32,10 C 38,10 42,14 42,20 Z" }),
+          h("path", { d: "M 20,20 L 44,20 L 41,25 L 23,25 Z", fill: "#f4eadc" }),
+          // Cat Face Base
+          h("path", { d: "M 14,36 C 14,24 50,24 50,36 C 50,48 14,48 14,36 Z", fill: "#fffdf8" }),
+          // Cat Ears
+          h("path", { d: "M 16,28 L 22,25 L 20,33 Z", fill: "#c97944" }),
+          h("path", { d: "M 48,28 L 42,25 L 44,33 Z", fill: "#c97944" }),
+          // Cat Whiskers
+          h("path", { d: "M 10,36 L 18,36 M 11,40 L 17,39 M 54,36 L 46,36 M 53,40 L 47,39" }),
+          // Cat Eyes & Nose
+          h("circle", { cx: "26", cy:, r: "2.5", fill: "#2f2924" }),
+          h("circle", { cx: "38", cy:, r: "2.5", fill: "#2f2924" }),
+          h("path", { d: "M 30,37 L 34,37 L 32,39 Z", fill: "#c97944" })
+        );
+      }
+
+      // ==========================================
       // ATOMIC LAYOUT BASE REUSABLE PIECES
       // ==========================================
       function Field({ label, value, onChange, placeholder, type="text", min, max, step, disabled=false, maxLength, className="" }) { 
@@ -94,19 +118,9 @@
       // IMAGE PREVIEW MODAL
       // ==========================================
       function ImagePreviewModal({ src, onClose }) {
-        return h("div", { 
-          className: "fixed inset-0 z-[100] grid place-items-center bg-ink/85 px-4 backdrop-blur-sm cursor-pointer",
-          onClick: onClose
-        },
-          h("button", { 
-            className: "absolute top-6 right-8 text-white text-4xl font-bold hover:text-clay transition-colors", 
-            onClick: onClose 
-          }, "×"),
-          h("img", { 
-            src, 
-            className: "max-h-[90vh] max-w-full object-contain rounded-lg shadow-2xl animate-fade-in", 
-            onClick: (e) => e.stopPropagation() // Prevent closing when clicking the image itself
-          })
+        return h("div", { className: "fixed inset-0 z-[100] grid place-items-center bg-ink/85 px-4 backdrop-blur-sm cursor-pointer", onClick: onClose },
+          h("button", { className: "absolute top-6 right-8 text-white text-4xl font-bold hover:text-clay transition-colors", onClick: onClose }, "×"),
+          h("img", { src, className: "max-h-[90vh] max-w-full object-contain rounded-lg shadow-2xl animate-fade-in", onClick: (e) => e.stopPropagation() })
         );
       }
       
@@ -198,45 +212,12 @@
         );
       }
 
-      function AddDishModal({ formName, setFormName, formOriginalName, setFormOriginalName, formTags, setFormTags, formPrep, setFormPrep, formCook, setFormCook, formIngredients, setFormIngredients, masterIngredients, formError, onClose, onSubmit }) {
-        const addLine = () => setFormIngredients(c => ensureArray(c).concat({ key: Date.now(), searchQuery: '', ingredient_id: null, qty: '', unit: 'g', role: 'main', showSuggestions: false }));
-        
-        const handleLocalSubmit = (e) => {
-          e.preventDefault();
-          onSubmit();
-        };
-
-        return h("div", { className: "fixed inset-0 z-50 grid place-items-center bg-ink/35 px-4 backdrop-blur-sm" },
-          h("form", { onSubmit: handleLocalSubmit, className: "max-h-[90vh] w-full max-w-4xl overflow-auto rounded-lg bg-cream p-6 shadow-soft" },
-            h("div", { className: "mb-5 flex items-center justify-between" }, h("h2", { className: "text-2xl font-semibold" }, "Add Custom Recipe"), h("button", { type: "button", onClick: onClose, className: "rounded-full bg-white px-3 py-1 text-sm font-semibold" }, "Close")),
-            h("div", { className: "grid gap-4" },
-              h("div", { className: "space-y-4" },
-                h(Field, { maxLength: 100, label: "Recipe Name (English)", value: formName, onChange: setFormName, placeholder: "e.g., General Tso Chicken" }),
-                h(Field, { maxLength: 100, label: "Original Name (Optional)", value: formOriginalName, onChange: setFormOriginalName, placeholder: "e.g., 左宗棠鸡 / Tortilla de Patatas" }),
-                h(Field, { maxLength: 150, label: "Category Tags", value: formTags, onChange: setFormTags, placeholder: "e.g., Chinese, Dinner" }),
-                
-                h("div", { className: "space-y-3 bg-white/60 p-4 rounded-lg border border-cedar/10" },
-                  h("div", { className: "flex justify-between items-center" }, h("span", { className: "text-sm font-bold text-cedar" }, "Add Ingredients")),
-                  h("div", { className: "space-y-2" }, 
-                    ensureArray(formIngredients).map((row, idx) => h(IngredientRepeaterRow, { key: row.key, row, masterIngredients, onChange: (updated) => setFormIngredients(c => ensureArray(c).map((r, i) => i === idx ? updated : r)), onRemove: () => setFormIngredients(c => ensureArray(c).filter((_, i) => i !== idx)) }))
-                  ),
-                  h("div", { className: "pt-1 text-right" },
-                    h("button", { type: "button", onClick: addLine, className: "text-xs bg-ink text-white px-3 py-1.5 rounded font-bold hover:bg-cedar" }, "+ Add")
-                  )
-                ),
-                
-                h(TextAreaField, { maxLength: 2000, label: "Preparation Steps", value: formPrep, onChange: setFormPrep, rows: 3 }),
-                h(TextAreaField, { maxLength: 2000, label: "Cooking Steps", value: formCook, onChange: setFormCook, rows: 3 })
-              )
-            ),
-            formError && h("p", { className: "mt-4 text-red-700 font-medium" }, formError),
-            h("div", { className: "mt-5 flex justify-end gap-3" }, h("button", { type: "button", onClick: onClose, className: "px-4 py-2 bg-white rounded-lg text-sm" }, "Cancel"), h("button", { type: "submit", className: "px-4 py-2 bg-clay text-white text-sm font-semibold rounded-lg" }, "Save Recipe"))
-          )
-        );
-      }
-
-      function DishCard({ dish, session, onPhotoUpload, onImageClick, onAdd, onOpen, onLogClick }) {
+      // ==========================================
+      // DISH CARD WITH FLOATING ACTION MATRIX
+      // ==========================================
+      function DishCard({ dish, session, cartCount, onPhotoUpload, onImageClick, onAdd, onOpen, onLogClick }) {
         const fileInputRef = React.useRef(null);
+        const isCartLimitReached = cartCount >= 2;
 
         return h("article", { className: "overflow-hidden rounded-lg border border-white/70 bg-white/80 shadow-soft flex flex-col justify-between relative group" },
           h("div", null,
@@ -246,34 +227,47 @@
                     src: dish.photo_url, 
                     alt: dish.name, 
                     className: "w-full h-full object-cover animate-fade-in cursor-pointer",
-                    onClick: (e) => {
-                      e.stopPropagation(); // Prevents triggering the recipe modal
-                      onImageClick(dish.photo_url);
-                    }
+                    onClick: (e) => { e.stopPropagation(); onImageClick(dish.photo_url); }
                   })
                 : h("div", { className: "dish-art h-40 w-full", style: { "--accent-a": dish.accent[0], "--accent-b": dish.accent[1], "--accent-c": dish.accent[2] } }),
               
-              session && h("div", { className: "absolute top-2 right-2 z-10" },
-                h("button", { 
+              // Floating Action Button Stack (Top Right & Right Alignment)
+              h("div", { className: "absolute top-2 right-2 z-10 flex flex-col gap-1.5 items-center" },
+                // Upload Camera Icon (Admin Only)
+                session && h("button", { 
                   type: "button",
                   onClick: () => fileInputRef.current && fileInputRef.current.click(),
-                  className: "p-2 rounded-full bg-ink/60 text-white shadow-md hover:bg-clay hover:scale-105 transition-all backdrop-blur-sm flex items-center justify-center",
+                  className: "p-2 rounded-full bg-ink/60 text-white shadow-md hover:bg-clay hover:scale-105 transition-all backdrop-blur-sm flex items-center justify-center text-xs",
                   title: "Upload/Change Photo"
                 }, "📸"),
+                
+                // Log Action Icon (Admin Only)
+                session && h("button", { 
+                  type: "button",
+                  onClick: onLogClick,
+                  className: "p-2 rounded-full bg-ink/60 text-white shadow-md hover:bg-clay hover:scale-105 transition-all backdrop-blur-sm flex items-center justify-center text-xs",
+                  title: "Log Cooking"
+                }, "📝"),
 
-                h("input", {
-                  type: "file",
-                  ref: fileInputRef,
-                  accept: "image/*",
-                  className: "hidden",
-                  onChange: (e) => {
-                    const file = e.target.files[0];
-                    if (file) onPhotoUpload(dish.id, file, dish.photo_url);
-                  }
-                })
+                h("input", { type: "file", ref: fileInputRef, accept: "image/*", className: "hidden", onChange: (e) => { const file = e.target.files[0]; if (file) onPhotoUpload(dish.id, file, dish.photo_url); } })
+              ),
+
+              // Floating Cart Icon Matrix (Bottom Right Alignment)
+              h("div", { className: "absolute bottom-2 right-2 z-10" },
+                h("button", { 
+                  type: "button",
+                  disabled: isCartLimitReached,
+                  onClick: onAdd,
+                  className: `p-2.5 rounded-full shadow-md text-white backdrop-blur-sm flex items-center justify-center text-sm transition-all ${
+                    isCartLimitReached 
+                      ? "bg-gray-400/60 cursor-not-allowed opacity-50" 
+                      : "bg-ink/60 hover:bg-clay hover:scale-105"
+                  }`,
+                  title: isCartLimitReached ? "Limit of 2 reached" : "Add to Cart"
+                }, "🛒")
               )
             ),
-            h("div", { className: "p-5 pb-1 space-y-2.5" },
+            h("div", { className: "p-5 pb-4 space-y-2.5" },
               h("div", null,
                 h("button", { onClick: onOpen, className: "min-w-0 text-left text-xl font-semibold leading-tight underline-offset-4 hover:text-clay hover:underline focus:outline-none inline-block" }, 
                   dish.name,
@@ -289,10 +283,6 @@
                 )
               )
             )
-          ),
-          h("div", { className: "p-5 pt-1 grid grid-cols-2 gap-2" },
-            h("button", { onClick: onLogClick, className: "rounded-lg border border-clay text-clay px-3 py-2 text-sm font-semibold hover:bg-cream" }, "📝 Log"),
-            h("button", { onClick: onAdd, className: "rounded-lg bg-clay text-white px-3 py-2 text-sm font-semibold hover:bg-cedar" }, "Add to Cart")
           )
         );
       }
@@ -415,15 +405,10 @@
         );
       }
 
-      function Sidebar({ viewMode, orderItems, requiredList, groceryList, coveredList, onClear, onUpdate, onSubmitCart, session, onSignOut, onOpenInventory }) {
-        return h("aside", { className: "space-y-4" }, 
+      function Sidebar({ viewMode, orderItems, requiredList, groceryList, coveredList, onClear, onUpdate, onSubmitCart, session, onOpenInventory }) {
+        return h("aside", { className: "space-y-4 w-full" }, 
           h(CookList, { orderItems, onClear, onUpdate, onSubmitCart }),
-          viewMode === "menu" && h(GroceryPanel, { requiredList, groceryList, coveredList, onOpenInventory }),
-          h("div", { className: "pt-4" },
-            session 
-              ? h("button", { onClick: onSignOut, className: "w-full py-2 bg-oat text-cedar text-xs font-bold rounded-lg hover:bg-clay hover:text-white transition shadow-sm" }, "🔓 Session Unlocked (Lock)")
-              : h("div", { className: "w-full py-2 bg-cream text-cedar/50 text-xs font-bold rounded-lg text-center border border-cedar/10" }, "🔒 Public View Mode")
-          )
+          viewMode === "menu" && h(GroceryPanel, { requiredList, groceryList, coveredList, onOpenInventory })
         );
       }
 
@@ -438,7 +423,12 @@
                   h("div", { className: "flex items-center gap-2" }, 
                     h("button", { onClick: () => onUpdate(dish.id, -1), className: "w-6 bg-white border rounded text-xs" }, "-"), 
                     h("span", { className: "w-6 text-center text-sm font-bold" }, dish.count), 
-                    h("button", { onClick: () => onUpdate(dish.id, 1), className: "w-6 bg-white border rounded text-xs" }, "+")
+                    // 🛒 Cart add item button is disabled if limit of 2 is reached
+                    h("button", { 
+                      onClick: () => onUpdate(dish.id, 1), 
+                      disabled: dish.count >= 2,
+                      className: `w-6 bg-white border rounded text-xs ${dish.count >= 2 ? "opacity-30 cursor-not-allowed" : ""}` 
+                    }, "+")
                   )
                 ))
               ),
@@ -497,13 +487,10 @@
         const [editingInventoryId, setEditingInventoryId] = useState(null);
         const [editingInventoryQty, setEditingInventoryIdQty] = useState("");
 
-        // Search, Sort, Filter, and Pagination States
         const [searchQuery, setSearchQuery] = useState("");
         const [sortMethod, setSortMethod] = useState("recent");
         const [filterCategory, setFilterCategory] = useState("All");
         const [currentPage, setCurrentPage] = useState(1);
-        
-        // Image Preview State
         const [previewImage, setPreviewImage] = useState(null);
 
         useEffect(() => {
@@ -539,9 +526,7 @@
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0, width, height);
 
-                canvas.toBlob((blob) => {
-                  resolve(blob);
-                }, 'image/jpeg', 0.7);
+                canvas.toBlob((blob) => { resolve(blob); }, 'image/jpeg', 0.7);
               };
             };
           });
@@ -566,7 +551,6 @@
           try {
             const compressedBlob = await compressImage(file);
             const fileExt = 'jpg';
-
             const filename = `recipe_${dishId}.${fileExt}`;
 
             await deleteOldPhoto(currentPhotoUrl);
@@ -892,34 +876,49 @@
         }
 
         function openNewFormModal() {
-          setFormName("");
-          setFormOriginalName("");
-          setFormTags("");
-          setFormPrep("");
-          setFormCook("");
-          setFormError("");
+          setFormName(""); setFormOriginalName(""); setFormTags(""); setFormPrep(""); setFormCook(""); setFormError("");
           setFormIngredients([{ key: Date.now(), searchQuery: '', ingredient_id: null, qty: '', unit: 'g', role: 'main', showSuggestions: false }]);
           setIsFormOpen(true);
         }
 
-        return h("main", { className: "mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-8 px-5 py-6 sm:px-8 lg:px-10" },
-          h("header", { className: "flex flex-col gap-5 border-b border-cedar/10 pb-6 lg:flex-row lg:items-end lg:justify-between" },
-            h("div", { className: "max-w-2xl" },
-              h("h1", { className: "text-4xl font-semibold tracking-normal text-ink sm:text-5xl" }, "Potacat Bistro"),
-              h("p", { className: "mt-3 max-w-xl text-base leading-7 text-cedar/75" }, "Welcome to Potacat Bistro. Browse our curated menu, discover our home-style recipes, and easily submit your order for your next meal.")
+        // Interceptive function to handle safe upper limit of cart elements
+        function handleAddToCartSafe(dish) {
+          setOrders(c => {
+            const existing = c.find(o => o.id === dish.id);
+            if (existing) {
+              if (existing.count >= 2) return c; // Lock operation safely
+              return c.map(o => o.id === dish.id ? { id: o.id, count: o.count + 1 } : o);
+            }
+            return c.concat({ id: dish.id, count: 1 });
+          });
+        }
+
+        return h("main", { className: "mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-8 px-4 py-6 sm:px-8 lg:px-10" },
+          h("header", { className: "flex flex-col gap-5 border-b border-cedar/10 pb-6 lg:flex-row lg:items-center lg:justify-between" },
+            // Title block now integrated with a cute SVG Cartoon Logo module
+            h("div", { className: "flex items-center gap-4 max-w-2xl" },
+              h(PotacatLogo, null),
+              h("div", null,
+                h("h1", { className: "text-4xl font-semibold tracking-normal text-ink sm:text-5xl" }, "Potacat Bistro"),
+                h("p", { className: "mt-2 max-w-xl text-sm leading-6 text-cedar/75" }, "Welcome to Potacat Bistro. Browse our curated menu, discover our home-style recipes, and easily submit your order for your next meal.")
+              )
             ),
-            h("div", { className: "flex flex-col gap-3 sm:items-end" },
-              h("button", { onClick: () => executeSecureAction(openNewFormModal), className: "rounded-lg bg-ink px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-cedar" }, "Add to Menu"),
-              h("div", { className: "grid grid-cols-3 gap-3 rounded-lg border border-white/70 bg-white/65 p-3 shadow-soft backdrop-blur" },
+            // Header actions repositioned neatly with Log In / Log Out utility switches
+            h("div", { className: "flex flex-wrap gap-2.5 sm:items-center shrink-0" },
+              h("button", { onClick: () => executeSecureAction(openNewFormModal), className: "rounded-lg bg-ink px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-cedar" }, "Add a Dish"),
+              session 
+                ? h("button", { onClick: handleSignOut, className: "rounded-lg border border-clay px-4 py-2.5 text-sm font-semibold text-clay bg-white hover:bg-cream transition shadow-sm" }, "🚪 Log Out")
+                : h("button", { onClick: () => executeSecureAction(() => {}), className: "rounded-lg bg-clay px-4 py-2.5 text-sm font-semibold text-white hover:bg-cedar transition shadow-sm" }, "🔑 Log In"),
+              h("div", { className: "hidden md:grid grid-cols-3 gap-2.5 rounded-lg border border-white/70 bg-white/65 p-2 shadow-soft backdrop-blur" },
                 h(Stat, { label: "Dishes", value: orderItems.length }), h(Stat, { label: "Servings", value: servings || 0 }), h(Stat, { label: "To Buy", value: groceryList.length })
               )
             )
           ),
           h("section", { className: "grid flex-1 gap-6 lg:grid-cols-[1.2fr_.9fr]" },
-            h("div", { className: "space-y-4" },
+            h("div", { className: "space-y-4 w-full" },
               h("div", { className: "flex flex-col gap-3 mb-2" },
                 viewMode === "menu" && h("div", { className: "flex flex-col sm:flex-row flex-wrap gap-2 w-full" },
-                  h("input", { value: searchQuery, placeholder: "Search recipes...", onChange: (e) => setSearchQuery(e.target.value), className: "flex-1 rounded-lg border border-white/70 bg-white/80 px-3 py-2.5 text-sm outline-none focus:border-clay shadow-sm min-w-[200px]" }),
+                  h("input", { value: searchQuery, placeholder: "Search recipes...", onChange: (e) => setSearchQuery(e.target.value), className: "flex-1 rounded-lg border border-white/70 bg-white/80 px-3 py-2.5 text-sm outline-none focus:border-clay shadow-sm min-w-[150px]" }),
                   h("select", { value: filterCategory, onChange: (e) => setFilterCategory(e.target.value), className: "rounded-lg border border-white/70 bg-white/80 px-3 py-2.5 text-sm outline-none focus:border-clay font-medium text-cedar cursor-pointer shadow-sm" },
                     h("option", { value: "All" }, "All Categories"),
                     h("option", { value: "Vegetable" }, "Vegetable"),
@@ -941,21 +940,26 @@
               ),
               viewMode === "menu" ? h("div", null,
                 h("div", { className: "grid gap-4 sm:grid-cols-2" },
-                  paginatedDishes.map(dish => h(DishCard, { 
-                    key: dish.id, 
-                    dish, 
-                    session,
-                    onPhotoUpload: handlePhotoUpload,
-                    onImageClick: (url) => setPreviewImage(url),
-                    onAdd: () => setOrders(c => c.find(o => o.id === dish.id) ? c.map(o => o.id === dish.id ? { id: o.id, count: o.count + 1 } : o) : c.concat({ id: dish.id, count: 1 })), 
-                    onOpen: () => setSelectedDish(dish), 
-                    onLogClick: () => executeSecureAction(() => setLoggingDish(dish)) 
-                  }))
+                  paginatedDishes.map(dish => {
+                    const currentCartItem = orders.find(o => o.id === dish.id);
+                    const currentCount = currentCartItem ? currentCartItem.count : 0;
+                    return h(DishCard, { 
+                      key: dish.id, 
+                      dish, 
+                      session,
+                      cartCount: currentCount, // Upper constraint counter channel
+                      onPhotoUpload: handlePhotoUpload,
+                      onImageClick: (url) => setPreviewImage(url),
+                      onAdd: () => handleAddToCartSafe(dish), 
+                      onOpen: () => setSelectedDish(dish), 
+                      onLogClick: () => executeSecureAction(() => setLoggingDish(dish)) 
+                    });
+                  })
                 ),
                 totalPages > 1 && h(Pagination, { currentPage, totalPages, onPageChange: setCurrentPage })
               ) : h(MainPaneInventoryModule, { inventory, inventoryForm, setInventoryForm, masterIngredients, editingInventoryId, editingInventoryQty, setEditingInventoryIdQty, onAddInventory: () => executeSecureAction(handleAddInventorySecure), onRemoveInventory: (id) => executeSecureAction(() => handleRemoveInventorySecure(id)), onEditInventory: (item) => executeSecureAction(() => { setEditingInventoryId(item.id); setEditingInventoryIdQty(String(item.qty)); }), onCommitInlineEdit: () => executeSecureAction(commitInlineInventoryEdit), onCancelInlineEdit: () => setEditingInventoryId(null) })
             ),
-            h(Sidebar, { viewMode, orderItems, requiredList, groceryList, coveredList, onClear: () => setOrders([]), onUpdate: (id, delta) => setOrders(c => ensureArray(c).map(o => o.id === id ? { id: o.id, count: Math.max(0, o.count + delta) } : o).filter(o => o.count > 0)), onSubmitCart: () => setIsCheckoutOpen(true), session, onSignOut: handleSignOut, onOpenInventory: () => setViewMode("inventory") })
+            h(Sidebar, { viewMode, orderItems, requiredList, groceryList, coveredList, onClear: () => setOrders([]), onUpdate: (id, delta) => setOrders(c => ensureArray(c).map(o => o.id === id ? { id: o.id, count: Math.max(0, o.count + delta) } : o).filter(o => o.count > 0)), onSubmitCart: () => setIsCheckoutOpen(true), session, onOpenInventory: () => setViewMode("inventory") })
           ),
           previewImage && h(ImagePreviewModal, { src: previewImage, onClose: () => setPreviewImage(null) }),
           selectedDish && h(RecipeModal, { dish: selectedDish, historyLogs: ensureArray(cookingHistory).filter(l => Number(l.recipe_id) === selectedDish.id), masterIngredients, executeSecureAction, onClose: () => setSelectedDish(null), onDelete: handleDeleteRecipeSecure, onUpdate: handleUpdateRecipeSecure, onLogClick: () => executeSecureAction(() => { setLoggingDish(selectedDish); setSelectedDish(null); }), onDeleteLog: handleDeleteLogSecure }),
