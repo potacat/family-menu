@@ -24,7 +24,7 @@
       html, body { overflow-x: hidden; position: relative; width: 100%; }
       body { background: radial-gradient(circle at top left, rgba(238, 166, 94, 0.18), transparent 34rem), linear-gradient(135deg, #fffaf2 0%, #f8efe4 50%, #fffdf8 100%); }
       .wood-grain { background: linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.34)), repeating-linear-gradient(105deg, rgba(201, 121, 68, 0.10) 0 1px, transparent 1px 12px), #f8efe4; }
-      .dish-art { background: radial-gradient(circle at 50% 50%, rgba(255,255,255,.95) 0 30%, transparent 31%), radial-gradient(circle at 45% 45%, var(--accent-a) 0 14%, transparent 15%), radial-gradient(circle at 58% 52%, var(--accent-b) 0 13%. var(--accent-c) 0 8%, transparent 9%), radial-gradient(circle at 50% 50%, #f5e3cd 0 55%, #c97944 56% 62%, transparent 63%); }
+      .dish-art { background: radial-gradient(circle at 50% 50%, rgba(255,255,255,.95) 0 30%, transparent 31%), radial-gradient(circle at 45% 45%, var(--accent-a) 0 14%, transparent 15%), radial-gradient(circle at 58% 52%, var(--accent-b) 0 13%, transparent 14%), radial-gradient(circle at 42% 60%, var(--accent-c) 0 8%, transparent 9%), radial-gradient(circle at 50% 50%, #f5e3cd 0 55%, #c97944 56% 62%, transparent 63%); }
     </style>
   </head>
   <body class="min-h-screen text-ink antialiased">
@@ -66,20 +66,15 @@
       // POTACAT CHEF CARTOON LOGO (SVG MODULE)
       // ==========================================
       function PotacatLogo() {
-        return h("svg", { width: "64", height: "64", viewBox: "0 0 64 64", className: "shrink-0 fill-none stroke-clay stroke-[2.5] stroke-linecap-round stroke-linejoin-round" },
-          // Chef Hat
+        return h("svg", { width: "64", height: "64", viewBox: "0 0 64 64", className: "shrink-0 fill-none stroke-clay stroke-[2.5] stroke-linecap-round stroke-linejoin-round hidden sm:block" },
           h("path", { d: "M 22,20 C 22,14 26,10 32,10 C 38,10 42,14 42,20 Z" }),
           h("path", { d: "M 20,20 L 44,20 L 41,25 L 23,25 Z", fill: "#f4eadc" }),
-          // Cat Face Base
           h("path", { d: "M 14,36 C 14,24 50,24 50,36 C 50,48 14,48 14,36 Z", fill: "#fffdf8" }),
-          // Cat Ears
           h("path", { d: "M 16,28 L 22,25 L 20,33 Z", fill: "#c97944" }),
           h("path", { d: "M 48,28 L 42,25 L 44,33 Z", fill: "#c97944" }),
-          // Cat Whiskers
           h("path", { d: "M 10,36 L 18,36 M 11,40 L 17,39 M 54,36 L 46,36 M 53,40 L 47,39" }),
-          // Cat Eyes & Nose
-          h("circle", { cx: "26", cy:, r: "2.5", fill: "#2f2924" }),
-          h("circle", { cx: "38", cy:, r: "2.5", fill: "#2f2924" }),
+          h("circle", { cx: "26", cy: "34", r: "2.5", fill: "#2f2924" }),
+          h("circle", { cx: "38", cy: "34", r: "2.5", fill: "#2f2924" }),
           h("path", { d: "M 30,37 L 34,37 L 32,39 Z", fill: "#c97944" })
         );
       }
@@ -212,6 +207,43 @@
         );
       }
 
+      function AddDishModal({ formName, setFormName, formOriginalName, setFormOriginalName, formTags, setFormTags, formPrep, setFormPrep, formCook, setFormCook, formIngredients, setFormIngredients, masterIngredients, formError, onClose, onSubmit }) {
+        const addLine = () => setFormIngredients(c => ensureArray(c).concat({ key: Date.now(), searchQuery: '', ingredient_id: null, qty: '', unit: 'g', role: 'main', showSuggestions: false }));
+        
+        const handleLocalSubmit = (e) => {
+          e.preventDefault();
+          onSubmit();
+        };
+
+        return h("div", { className: "fixed inset-0 z-50 grid place-items-center bg-ink/35 px-4 backdrop-blur-sm" },
+          h("form", { onSubmit: handleLocalSubmit, className: "max-h-[90vh] w-full max-w-4xl overflow-auto rounded-lg bg-cream p-6 shadow-soft" },
+            h("div", { className: "mb-5 flex items-center justify-between" }, h("h2", { className: "text-2xl font-semibold" }, "Add Custom Recipe"), h("button", { type: "button", onClick: onClose, className: "rounded-full bg-white px-3 py-1 text-sm font-semibold" }, "Close")),
+            h("div", { className: "grid gap-4" },
+              h("div", { className: "space-y-4" },
+                h(Field, { maxLength: 100, label: "Recipe Name (English)", value: formName, onChange: setFormName, placeholder: "e.g., General Tso Chicken" }),
+                h(Field, { maxLength: 100, label: "Original Name (Optional)", value: formOriginalName, onChange: setFormOriginalName, placeholder: "e.g., 左宗棠鸡 / Tortilla de Patatas" }),
+                h(Field, { maxLength: 150, label: "Category Tags", value: formTags, onChange: setFormTags, placeholder: "e.g., Chinese, Dinner" }),
+                
+                h("div", { className: "space-y-3 bg-white/60 p-4 rounded-lg border border-cedar/10" },
+                  h("div", { className: "flex justify-between items-center" }, h("span", { className: "text-sm font-bold text-cedar" }, "Add Ingredients")),
+                  h("div", { className: "space-y-2" }, 
+                    ensureArray(formIngredients).map((row, idx) => h(IngredientRepeaterRow, { key: row.key, row, masterIngredients, onChange: (updated) => setFormIngredients(c => ensureArray(c).map((r, i) => i === idx ? updated : r)), onRemove: () => setFormIngredients(c => ensureArray(c).filter((_, i) => i !== idx)) }))
+                  ),
+                  h("div", { className: "pt-1 text-right" },
+                    h("button", { type: "button", onClick: addLine, className: "text-xs bg-ink text-white px-3 py-1.5 rounded font-bold hover:bg-cedar" }, "+ Add")
+                  )
+                ),
+                
+                h(TextAreaField, { maxLength: 2000, label: "Preparation Steps", value: formPrep, onChange: setFormPrep, rows: 3 }),
+                h(TextAreaField, { maxLength: 2000, label: "Cooking Steps", value: formCook, onChange: setFormCook, rows: 3 })
+              )
+            ),
+            formError && h("p", { className: "mt-4 text-red-700 font-medium" }, formError),
+            h("div", { className: "mt-5 flex justify-end gap-3" }, h("button", { type: "button", onClick: onClose, className: "px-4 py-2 bg-white rounded-lg text-sm" }, "Cancel"), h("button", { type: "submit", className: "px-4 py-2 bg-clay text-white text-sm font-semibold rounded-lg" }, "Save Recipe"))
+          )
+        );
+      }
+
       // ==========================================
       // DISH CARD WITH FLOATING ACTION MATRIX
       // ==========================================
@@ -219,7 +251,7 @@
         const fileInputRef = React.useRef(null);
         const isCartLimitReached = cartCount >= 2;
 
-        return h("article", { className: "overflow-hidden rounded-lg border border-white/70 bg-white/80 shadow-soft flex flex-col justify-between relative group" },
+        return h("article", { className: "overflow-hidden rounded-lg border border-white/70 bg-white/80 shadow-soft flex flex-col relative group" },
           h("div", null,
             h("div", { className: "relative h-40 w-full overflow-hidden border-b border-cedar/5 bg-cream" },
               dish.photo_url 
@@ -231,28 +263,24 @@
                   })
                 : h("div", { className: "dish-art h-40 w-full", style: { "--accent-a": dish.accent[0], "--accent-b": dish.accent[1], "--accent-c": dish.accent[2] } }),
               
-              // Floating Action Button Stack (Top Right & Right Alignment)
+              // Floating Action Button Stack (Top Right)
               h("div", { className: "absolute top-2 right-2 z-10 flex flex-col gap-1.5 items-center" },
-                // Upload Camera Icon (Admin Only)
                 session && h("button", { 
                   type: "button",
                   onClick: () => fileInputRef.current && fileInputRef.current.click(),
                   className: "p-2 rounded-full bg-ink/60 text-white shadow-md hover:bg-clay hover:scale-105 transition-all backdrop-blur-sm flex items-center justify-center text-xs",
                   title: "Upload/Change Photo"
                 }, "📸"),
-                
-                // Log Action Icon (Admin Only)
                 session && h("button", { 
                   type: "button",
                   onClick: onLogClick,
                   className: "p-2 rounded-full bg-ink/60 text-white shadow-md hover:bg-clay hover:scale-105 transition-all backdrop-blur-sm flex items-center justify-center text-xs",
                   title: "Log Cooking"
                 }, "📝"),
-
                 h("input", { type: "file", ref: fileInputRef, accept: "image/*", className: "hidden", onChange: (e) => { const file = e.target.files[0]; if (file) onPhotoUpload(dish.id, file, dish.photo_url); } })
               ),
 
-              // Floating Cart Icon Matrix (Bottom Right Alignment)
+              // Floating Cart Icon Matrix (Bottom Right)
               h("div", { className: "absolute bottom-2 right-2 z-10" },
                 h("button", { 
                   type: "button",
@@ -487,6 +515,7 @@
         const [editingInventoryId, setEditingInventoryId] = useState(null);
         const [editingInventoryQty, setEditingInventoryIdQty] = useState("");
 
+        // Search, Sort, Filter, and Pagination States
         const [searchQuery, setSearchQuery] = useState("");
         const [sortMethod, setSortMethod] = useState("recent");
         const [filterCategory, setFilterCategory] = useState("All");
