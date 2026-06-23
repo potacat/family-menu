@@ -192,10 +192,37 @@
         );
       }
 
-      function DishCard({ dish, onAdd, onOpen, onLogClick }) {
-        return h("article", { className: "overflow-hidden rounded-lg border border-white/70 bg-white/80 shadow-soft flex flex-col justify-between" },
+      function DishCard({ dish, session, onPhotoUpload, onAdd, onOpen, onLogClick }) {
+        const fileInputRef = React.useRef(null);
+
+        return h("article", { className: "overflow-hidden rounded-lg border border-white/70 bg-white/80 shadow-soft flex flex-col justify-between relative group" },
           h("div", null,
-            h("div", { className: "dish-art h-40", style: { "--accent-a": dish.accent[0], "--accent-b": dish.accent[1], "--accent-c": dish.accent[2] } }),
+            
+            h("div", { className: "relative h-40 w-full overflow-hidden border-b border-cedar/5 bg-cream" },
+              dish.photo_url 
+                ? h("img", { src: dish.photo_url, alt: dish.name, className: "w-full h-full object-cover animate-fade-in" })
+                : h("div", { className: "dish-art h-40 w-full", style: { "--accent-a": dish.accent[0], "--accent-b": dish.accent[1], "--accent-c": dish.accent[2] } }),
+              
+              session && h("div", { className: "absolute top-2 right-2 z-10" },
+                h("button", { 
+                  type: "button",
+                  onClick: () => fileInputRef.current && fileInputRef.current.click(),
+                  className: "p-2 rounded-full bg-ink/60 text-white shadow-md hover:bg-clay hover:scale-105 transition-all backdrop-blur-sm flex items-center justify-center",
+                  title: "Upload/Change Photo"
+                }, "📸"),
+
+                h("input", {
+                  type: "file",
+                  ref: fileInputRef,
+                  accept: "image/*",
+                  className: "hidden",
+                  onChange: (e) => {
+                    const file = e.target.files[0];
+                    if (file) onPhotoUpload(dish.id, file, dish.photo_url);
+                  }
+                })
+              )
+            ),
             h("div", { className: "p-5 pb-1 space-y-2.5" },
               h("div", null,
                 h("button", { onClick: onOpen, className: "min-w-0 text-left text-xl font-semibold leading-tight underline-offset-4 hover:text-clay hover:underline focus:outline-none inline-block" }, 
@@ -419,6 +446,88 @@
           bootstrapCloudBistro();
         }, []);
 
+        function compressImage(file) {
+          return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = (event) => {
+              const img = new Image();
+              img.src = event.target.result;
+              img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const MAX_WIDTH = 800;
+                let width = img.width;
+                let height = img.height;
+
+                if (width > MAX_WIDTH) {
+                  height = Math.round((height * MAX_WIDTH) / width);
+                  width = MAX_WIDTH;
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+
+                canvas.toBlob((blob) => {
+                  resolve(blob);
+                }, 'image/jpeg', 0.7);
+              };
+            };
+          });
+        }
+
+        async function deleteOldPhoto(photoUrl) {
+          if (!photoUrl) return;
+          try {
+            const parts = photoUrl.split('/');
+            const filename = parts[parts.length - 1];
+            if (filename) {
+              await supabase.storage.from('dish-photos').remove([filename]);
+            }
+          } catch (e) {
+            console.error("Failed to delete old photo:", e);
+          }
+        }
+
+        async function handlePhotoUpload(dishId, file, currentPhotoUrl) {
+          if (!file) return;
+          setIsDataLoading(true);
+          try {
+            const compressedBlob = await compressImage(file);
+            const fileExt = 'jpg';
+
+            const filename = `recipe_${dishId}.${fileExt}`;
+
+            await deleteOldPhoto(currentPhotoUrl);
+
+            const { error: uploadError } = await supabase.storage
+              .from('dish-photos')
+              .upload(filename, compressedBlob, { contentType: 'image/jpeg', upsert: true });
+
+            if (uploadError) throw uploadError;
+
+            const { data: { publicUrl } } = supabase.storage
+              .from('dish-photos')
+              .getPublicUrl(filename);
+
+            const finalUrl = `${publicUrl}?t=${Date.now()}`;
+
+            const { error: dbError } = await supabase
+              .from('recipes')
+              .update({ photo_url: finalUrl })
+              .eq('id', dishId);
+
+            if (dbError) throw dbError;
+
+            await bootstrapCloudBistro();
+          } catch (err) {
+            alert("Photo upload reference failure: " + err.message);
+          } finally {
+            setIsDataLoading(false);
+          }
+        }
+
         async function bootstrapCloudBistro() {
           try {
             const [ingRes, recRes, invRes, histRes] = await Promise.all([
@@ -441,7 +550,7 @@
                   id: ri.ingredients.id, name: ri.ingredients.name, qty: Number(ri.qty), unit: ri.ingredients.unit, role: ri.ingredients.role, calories_per_unit: Number(ri.ingredients.calories_per_unit)
                 }));
                 return {
-                  id: Number(r.id), name: r.name, original_name: r.original_name || "", subtitle: r.subtitle, time: r.time_estimate, tags: ensureArray(r.tags), accent: ensureArray(r.accent).length >= 3 ? r.accent : ["#d78a55", "#8fbc8f", "#f0c36a"], preparation: ensureArray(r.preparation), cooking: ensureArray(r.cooking), custom: r.is_custom,
+                  id: Number(r.id), name: r.name, original_name: r.original_name || "", subtitle: r.subtitle, time: r.time_estimate, tags: ensureArray(r.tags), accent: ensureArray(r.accent).length >= 3 ? r.accent : ["#d78a55", "#8fbc8f", "#f0c36a"], preparation: ensureArray(r.preparation), cooking: ensureArray(r.cooking), custom: r.is_custom, photo_url: r.photo_url,
                   mainIngredients: parsedIngs.filter(i => i.role === 'main'), pantryIngredients: parsedIngs.filter(i => i.role === 'pantry')
                 };
               }));
@@ -702,7 +811,15 @@
                 viewMode === "menu" && h("input", { value: searchQuery, placeholder: "Search recipes...", onChange: (e) => setSearchQuery(e.target.value), className: "w-full rounded-lg border border-white/70 bg-white/80 px-3 py-3 text-sm outline-none sm:max-w-xs focus:border-clay" })
               ),
               viewMode === "menu" ? h("div", { className: "grid gap-4 sm:grid-cols-2" },
-                ensureArray(visibleDishes).map(dish => h(DishCard, { key: dish.id, dish, onAdd: () => setOrders(c => c.find(o => o.id === dish.id) ? c.map(o => o.id === dish.id ? { id: o.id, count: o.count + 1 } : o) : c.concat({ id: dish.id, count: 1 })), onOpen: () => setSelectedDish(dish), onLogClick: () => executeSecureAction(() => setLoggingDish(dish)) }))
+                ensureArray(visibleDishes).map(dish => h(DishCard, { 
+                  key: dish.id, 
+                  dish, 
+                  session, // 传入 session 控制相机图标显示
+                  onPhotoUpload: handlePhotoUpload, // 传入上传和压缩处理函数
+                  onAdd: () => setOrders(c => c.find(o => o.id === dish.id) ? c.map(o => o.id === dish.id ? { id: o.id, count: o.count + 1 } : o) : c.concat({ id: dish.id, count: 1 })), 
+                  onOpen: () => setSelectedDish(dish), 
+                  onLogClick: () => executeSecureAction(() => setLoggingDish(dish)) 
+                }))
               ) : h(MainPaneInventoryModule, { inventory, inventoryForm, setInventoryForm, masterIngredients, editingInventoryId, editingInventoryQty, setEditingInventoryIdQty, onAddInventory: () => executeSecureAction(handleAddInventorySecure), onRemoveInventory: (id) => executeSecureAction(() => handleRemoveInventorySecure(id)), onEditInventory: (item) => executeSecureAction(() => { setEditingInventoryId(item.id); setEditingInventoryIdQty(String(item.qty)); }), onCommitInlineEdit: () => executeSecureAction(commitInlineInventoryEdit), onCancelInlineEdit: () => setEditingInventoryId(null) })
             ),
             h(Sidebar, { viewMode, orderItems, requiredList, groceryList, coveredList, onClear: () => setOrders([]), onUpdate: (id, delta) => setOrders(c => ensureArray(c).map(o => o.id === id ? { id: o.id, count: Math.max(0, o.count + delta) } : o).filter(o => o.count > 0)), onSubmitCart: () => setIsCheckoutOpen(true), session, onSignOut: handleSignOut })
