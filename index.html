@@ -84,7 +84,7 @@
       }
 
       // ==========================================
-      // 🧱 SUB-COMPONENTS ENGINE BLOCK
+      // 🧱 CORE MODULE SUB-COMPONENTS
       // ==========================================
       function IngredientRepeaterRow({ row, onChange, onRemove, masterIngredients }) {
         const suggestions = useMemo(() => {
@@ -311,6 +311,22 @@
         );
       }
 
+      // 📌 Restored: CheckoutModal to fix high-level boot loader freezing loops
+      function CheckoutModal({ onClose, onConfirm }) {
+        const [name, setName] = useState(""); const [note, setNote] = useState("");
+        return h("div", { className: "fixed inset-0 z-50 grid place-items-center bg-ink/40 px-4 backdrop-blur-sm" },
+          h("form", { onSubmit: (e) => { e.preventDefault(); if (name.trim()) onConfirm({ name, note }); }, className: "w-full max-w-md rounded-xl bg-cream p-6 shadow-soft border space-y-4 text-left" },
+            h("h2", { className: "text-2xl font-bold text-ink" }, "Finalize Your Order"),
+            h(Field, { label: "Your Name", value: name, onChange: setName, placeholder: "e.g., Alex" }),
+            h(TextAreaField, { label: "Order Note (Optional)", value: note, onChange: setNote, rows: 3 }),
+            h("div", { className: "flex justify-end gap-2 border-t pt-3 mt-4" },
+              h("button", { type: "button", onClick: onClose, className: "px-4 py-2 bg-white rounded-lg text-sm font-semibold" }, "Cancel"),
+              h("button", { type: "submit", className: "px-4 py-2 bg-clay text-white text-sm font-semibold rounded-lg hover:bg-cedar" }, "Confirm Order")
+            )
+          )
+        );
+      }
+
       function Sidebar({ viewMode, orderItems, requiredList, groceryList, coveredList, onClear, onUpdate, onSubmitCart }) {
         return h("aside", { className: "space-y-4" }, 
           h(CookList, { orderItems, onClear, onUpdate, onSubmitCart }),
@@ -348,25 +364,6 @@
           coveredList.length > 0 && h("div", { className: "mt-4 bg-white/40 p-2 rounded" }, h("p", { className: "text-xs font-bold opacity-60 mb-1" }, "Covered items in stock:"), h("div", { className: "flex flex-wrap gap-1" }, coveredList.map(c => h("span", { key: c.name, className: "bg-cream px-2 py-0.5 rounded text-xs opacity-75" }, c.name))))
         );
       }
-
-      function CheckoutModal({ onClose, onConfirm }) {
-        const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [note, setNote] = useState("");
-        return h("div", { className: "fixed inset-0 z-50 grid place-items-center bg-ink/40 px-4 backdrop-blur-sm" },
-          h("form", { onSubmit: (e) => { e.preventDefault(); if(name) onConfirm({ name, email, note }); }, className: "w-full max-w-md rounded-xl bg-cream p-6 shadow-soft border space-y-4" },
-            h("h2", { className: "text-2xl font-bold" }, "Finalize Your Order"),
-            h(Field, { label: "Your Name", value: name, onChange: setName, placeholder: "e.g., Alex" }),
-            h(Field, { type: "email", label: "Your Email (Optional)", value: email, onChange: setEmail, placeholder: "e.g., alex@example.com" }),
-            h(TextAreaField, { label: "Order Note (Optional)", value: note, onChange: setNote, rows: 3 }),
-            h("div", { className: "flex justify-end gap-2 border-t pt-3 mt-4" },
-              h("button", { type: "button", onClick: onClose, className: "px-4 py-2 bg-white rounded-lg text-sm font-semibold" }, "Cancel"),
-              h("button", { type: "submit", className: "px-4 py-2 bg-clay text-white text-sm font-semibold rounded-lg hover:bg-cedar" }, "Confirm Order")
-            )
-          )
-        );
-      }
-
-      function IngredientSection({ title, items }) { return h("section", { className: "mb-4" }, h("h3", { className: "text-xs font-bold text-clay uppercase tracking-wider mb-1.5" }, title), h("div", { className: "flex flex-wrap gap-1.5" }, items.length ? items.map(i => h("span", { key: i.name, className: "bg-white border px-2.5 py-1 rounded-full text-xs" }, `${i.name}: ${formatAmount(i.qty, i.unit)}`)) : h("span", { className: "text-xs opacity-50" }, "None"))); }
-      function StepSection({ title, steps }) { return h("section", { className: "mb-4" }, h("h3", { className: "text-xs font-bold text-clay uppercase tracking-wider mb-2" }, title), h("ol", { className: "space-y-2" }, steps.map((s, idx) => h("li", { key: idx, className: "bg-white/70 border p-3 rounded-lg text-xs leading-relaxed" }, h("span", { className: "font-bold text-clay mr-2" }, String(idx+1).padStart(2, '0')), s)))); }
 
       function App() {
         const [session, setSession] = useState(null);
@@ -524,7 +521,7 @@
         const servings = orderItems.reduce((sum, item) => sum + item.count * 2, 0);
 
         async function handleSaveNewRecipe(e) {
-          if (e) e.preventDefault(); // 📌 Fixed form submission flash
+          if (e) e.preventDefault();
           const name = formName.trim(); const originalName = formOriginalName.trim();
           if (!name || formIngredients.length === 0) { setFormError("Recipe name and ingredients are required!"); return; }
           const prepArr = formPrep.split('\n').map(l => l.trim()).filter(Boolean);
@@ -550,9 +547,10 @@
         function handleUpdateRecipeSecure(id, meta, incomingRows) {
           await supabase.from('recipes').update({ name: meta.name, original_name: meta.original_name, subtitle: meta.subtitle, tags: meta.tags, preparation: meta.preparation, cooking: meta.cooking }).eq('id', id);
           await supabase.from('recipe_ingredients').delete().eq('recipe_id', id);
-          const activeLinks = await resolveIngredientsPayload(incomingRows);
-          const junctionRows = activeLinks.map(link => ({ recipe_id: id, ingredient_id: link.ingredient_id, qty: link.qty }));
-          supabase.from('recipe_ingredients').insert(junctionRows).then(() => bootstrapCloudBistro());
+          const activeLinks = resolveIngredientsPayload(incomingRows).then(activeLinks => {
+            const junctionRows = activeLinks.map(link => ({ recipe_id: id, ingredient_id: link.ingredient_id, qty: link.qty }));
+            supabase.from('recipe_ingredients').insert(junctionRows).then(() => bootstrapCloudBistro());
+          });
           setSelectedDish(null);
         }
 
@@ -576,46 +574,31 @@
         }
 
         function handleAddInventorySecure(e) {
-          if (e) e.preventDefault(); // 📌 Fixed form submission flash
-          executeSecureAction(async () => {
-            const inputName = titleCase(inventoryForm.name.trim());
-            if (!inputName || Number(inventoryForm.qty) <= 0) { alert("Invalid name or quantity level entry."); return; }
+          if (e) e.preventDefault();
+          const inputName = titleCase(inventoryForm.name.trim());
+          if (!inputName || Number(inventoryForm.qty) <= 0) { alert("Invalid name or quantity level entry."); return; }
 
-            let targetIng = ensureArray(masterIngredients).find(mi => mi.name.toLowerCase() === inputName.toLowerCase());
-            
-            if (!targetIng) {
-              const cleanUnit = normalizeUnit(inventoryForm.unit);
-              const { data: newIng, error } = await supabase.from('ingredients').insert([{
-                name: inputName, unit: cleanUnit || "g", calories_per_unit: 0, role: "main"
-              }]).select().single();
-
+          let targetIng = ensureArray(masterIngredients).find(mi => mi.name.toLowerCase() === inputName.toLowerCase());
+          
+          if (!targetIng) {
+            const cleanUnit = normalizeUnit(inventoryForm.unit);
+            supabase.from('ingredients').insert([{ name: inputName, unit: cleanUnit || "g", calories_per_unit: 0, role: "main" }]).select().single().then(({ data: newIng, error }) => {
               if (!error && newIng) {
                 masterIngredients.push(newIng);
-                targetIng = newIng;
-              } else {
-                alert("Cloud registration for new ingredient rejected.");
-                return;
+                supabase.from('pantry_inventory').upsert({ ingredient_id: newIng.id, qty: Number(inventoryForm.qty) }, { onConflict: 'ingredient_id' }).then(() => bootstrapCloudBistro());
               }
-            }
-
-            await supabase.from('pantry_inventory').upsert({ ingredient_id: targetIng.id, qty: Number(inventoryForm.qty) }, { onConflict: 'ingredient_id' });
-            bootstrapCloudBistro();
-            setInventoryForm(emptyInventoryForm);
-          });
+            });
+          } else {
+            supabase.from('pantry_inventory').upsert({ ingredient_id: targetIng.id, qty: Number(inventoryForm.qty) }, { onConflict: 'ingredient_id' }).then(() => bootstrapCloudBistro());
+          }
+          setInventoryForm(emptyInventoryForm);
         }
 
         function handleRemoveInventorySecure(id) {
-          if (!window.confirm("Wipe inventory stock allocation reference?")) return;
+          if (!window.confirm("Wipe inventory stock reference?")) return;
           supabase.from('pantry_inventory').delete().eq('id', id).then(() => {
             setInventory(c => ensureArray(c).filter(i => i.id !== id));
           });
-        }
-
-        async function commitInlineInventoryEdit() {
-          if (Number(editingInventoryQty) < 0) return;
-          await supabase.from('pantry_inventory').update({ qty: Number(editingInventoryQty) }).eq('id', editingInventoryId);
-          setInventory(c => ensureArray(c).map(i => i.id === editingInventoryId ? Object.assign({}, i, { qty: Number(editingInventoryQty) }) : i));
-          setEditingInventoryId(null);
         }
 
         return h("main", { className: "mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-8 px-5 py-6 sm:px-8 lg:px-10" },
@@ -625,7 +608,7 @@
               h("p", { className: "mt-3 max-w-xl text-base leading-7 text-cedar/75" }, "Welcome to Sai's Bistro, our private kitchen getaway. Explore customized recipes, monitor pantry stock parameters, and coordinate dinner logs.")
             ),
             h("div", { className: "flex flex-col gap-3 sm:items-end" },
-              h("button", { onClick: () => executeSecureAction(openNewFormModal), className: "rounded-lg bg-ink px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-cedar" }, "Add to Menu"), // 📌 Intercepted prior to opening
+              h("button", { onClick: () => executeSecureAction(openNewFormModal), className: "rounded-lg bg-ink px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-cedar" }, "Add to Menu"),
               h("div", { className: "grid grid-cols-3 gap-3 rounded-lg border border-white/70 bg-white/65 p-3 shadow-soft backdrop-blur" },
                 h(Stat, { label: "Dishes", value: orderItems.length }), h(Stat, { label: "Servings", value: servings || 0 }), h(Stat, { label: "To Buy", value: groceryList.length })
               )
@@ -640,8 +623,8 @@
                 viewMode === "menu" && h("input", { value: searchQuery, placeholder: "Search recipes...", onChange: (e) => setSearchQuery(e.target.value), className: "w-full rounded-lg border border-white/70 bg-white/80 px-3 py-3 text-sm outline-none sm:max-w-xs focus:border-clay" })
               ),
               viewMode === "menu" ? h("div", { className: "grid gap-4 sm:grid-cols-2" },
-                ensureArray(visibleDishes).map(dish => h(DishCard, { key: dish.id, dish, onAdd: () => setOrders(c => c.find(o => o.id === dish.id) ? c.map(o => o.id === dish.id ? { id: o.id, count: o.count + 1 } : o) : c.concat({ id: dish.id, count: 1 })), onOpen: () => setSelectedDish(dish), onLogClick: () => executeSecureAction(() => setLoggingDish(dish)) })) // 📌 Intercepted prior to logging pop-up
-              ) : h(MainPaneInventoryModule, { inventory, inventoryForm, setInventoryForm, masterIngredients, editingInventoryId, editingInventoryQty, setEditingInventoryIdQty, onAddInventory: handleAddInventorySecure, onRemoveInventory: (id) => executeSecureAction(() => handleRemoveInventorySecure(id)), onEditInventory: (item) => executeSecureAction(() => { setEditingInventoryId(item.id); setEditingInventoryIdQty(String(item.qty)); }), onCommitInlineEdit: () => executeSecureAction(commitInlineInventoryEdit), onCancelInlineEdit: () => setEditingInventoryId(null) })
+                ensureArray(visibleDishes).map(dish => h(DishCard, { key: dish.id, dish, onAdd: () => setOrders(c => c.find(o => o.id === dish.id) ? c.map(o => o.id === dish.id ? { id: o.id, count: o.count + 1 } : o) : c.concat({ id: dish.id, count: 1 })), onOpen: () => setSelectedDish(dish), onLogClick: () => executeSecureAction(() => setLoggingDish(dish)) }))
+              ) : h(MainPaneInventoryModule, { inventory, inventoryForm, setInventoryForm, masterIngredients, editingInventoryId, editingInventoryQty, setEditingInventoryIdQty, onAddInventory: (e) => executeSecureAction(() => handleAddInventorySecure(e)), onRemoveInventory: (id) => executeSecureAction(() => handleRemoveInventorySecure(id)), onEditInventory: (item) => executeSecureAction(() => { setEditingInventoryId(item.id); setEditingInventoryIdQty(String(item.qty)); }), onCommitInlineEdit: () => executeSecureAction(commitInlineInventoryEdit), onCancelInlineEdit: () => setEditingInventoryId(null) })
             ),
             h(Sidebar, { viewMode, orderItems, requiredList, groceryList, coveredList, onClear: () => setOrders([]), onUpdate: (id, delta) => setOrders(c => ensureArray(c).map(o => o.id === id ? { id: o.id, count: Math.max(0, o.count + delta) } : o).filter(o => o.count > 0)), onSubmitCart: () => setIsCheckoutOpen(true) })
           ),
